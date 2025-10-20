@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hybrid-rag-config
+data:
+  log-level: "INFO"
+  app-version: "1.0.0"
+  bm25-k1: "1.5"
+  bm25-b: "0.75"
+  rrf-k: "60"
+  top-k: "10"

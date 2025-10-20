@@ -1,0 +1,32 @@
+[
+  {
+    "id": "doc1",
+    "language": "en",
+    "title": "Introduction to Hybrid Retrieval Systems",
+    "text": "Hybrid retrieval systems combine sparse methods like BM25 with dense neural methods like ColBERT to achieve better accuracy. BM25 provides strong keyword matching while ColBERT offers semantic understanding through late-interaction mechanisms."
+  },
+  {
+    "id": "doc2",
+    "language": "en",
+    "title": "Knowledge Graphs for Information Retrieval",
+    "text": "Knowledge graphs store entities and their relationships, enabling graph-based retrieval. By traversing relationships, systems can discover relevant information that keyword-based methods might miss."
+  },
+  {
+    "id": "doc3",
+    "language": "en",
+    "title": "Reciprocal Rank Fusion Explained",
+    "text": "Reciprocal Rank Fusion (RRF) is a simple yet effective method to combine multiple ranked lists. The formula RRFscore(d) = sum(1/(k + rank)) aggregates rankings from different retrieval methods without requiring score normalization."
+  },
+  {
+    "id": "doc4",
+    "language": "ar",
+    "title": "مقدمة لأنظمة الاسترجاع الهجينة",
+    "text": "تجمع أنظمة الاسترجاع الهجينة بين الطرق المتفرقة مثل BM25 والطرق العصبية الكثيفة مثل ColBERT لتحقيق دقة أفضل. يوفر BM25 مطابقة قوية للكلمات الرئيسية بينما يقدم ColBERT فهمًا دلاليًا."
+  },
+  {
+    "id": "doc5",
+    "language": "es",
+    "title": "Introducción a los Sistemas de Recuperación Híbridos",
+    "text": "Los sistemas de recuperación híbridos combinan métodos dispersos como BM25 con métodos neuronales densos como ColBERT para lograr mejor precisión. BM25 proporciona coincidencia fuerte de palabras clave mientras ColBERT ofrece comprensión semántica."
+  }
+]

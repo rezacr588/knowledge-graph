@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hybrid-rag-api
+  labels:
+    app: hybrid-rag-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: hybrid-rag-api
+  template:
+    metadata:
+      labels:
+        app: hybrid-rag-api
+    spec:
+      containers:
+      - name: api
+        image: hybrid-rag-api:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: NEO4J_URI
+          valueFrom:
+            secretKeyRef:
+              name: hybrid-rag-secrets
+              key: neo4j-uri
+        - name: NEO4J_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: hybrid-rag-secrets
+              key: neo4j-username
+        - name: NEO4J_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hybrid-rag-secrets
+              key: neo4j-password
+        - name: QDRANT_URL
+          valueFrom:
+            secretKeyRef:
+              name: hybrid-rag-secrets
+              key: qdrant-url
+        - name: QDRANT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hybrid-rag-secrets
+              key: qdrant-api-key
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hybrid-rag-secrets
+              key: gemini-api-key
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: hybrid-rag-config
+              key: log-level
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"

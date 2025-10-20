@@ -1,0 +1,13 @@
+Machine Learning and Artificial Intelligence
+
+Machine learning is a subset of artificial intelligence that focuses on building systems that can learn from data. Deep learning is a specialized technique within machine learning that uses neural networks with multiple layers.
+
+Natural language processing (NLP) is another important area of AI that enables computers to understand and generate human language. Modern NLP systems use transformers and attention mechanisms.
+
+Applications of AI include:
+- Healthcare: Medical image analysis and disease prediction
+- Finance: Fraud detection and algorithmic trading
+- Transportation: Self-driving cars and traffic optimization
+- Education: Personalized learning systems
+
+The field continues to evolve rapidly with new techniques and applications emerging constantly.

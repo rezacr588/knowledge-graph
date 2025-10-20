@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: hybrid-rag-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - hybrid-rag-network
+
+  # Optional: Local Neo4j (if not using AuraDB)
+  # neo4j:
+  #   image: neo4j:5.14-community
+  #   container_name: hybrid-rag-neo4j
+  #   ports:
+  #     - "7474:7474"  # HTTP
+  #     - "7687:7687"  # Bolt
+  #   environment:
+  #     - NEO4J_AUTH=neo4j/password123
+  #     - NEO4J_PLUGINS=["apoc"]
+  #   volumes:
+  #     - neo4j-data:/data
+  #     - neo4j-logs:/logs
+  #   restart: unless-stopped
+  #   networks:
+  #     - hybrid-rag-network
+
+  # Optional: Frontend (if you want to test the UI)
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: hybrid-rag-frontend
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - VITE_API_URL=http://localhost:8000
+  #   volumes:
+  #     - ./frontend/src:/app/src
+  #     - ./frontend/public:/app/public
+  #   restart: unless-stopped
+  #   networks:
+  #     - hybrid-rag-network
+
+networks:
+  hybrid-rag-network:
+    name: hybrid-rag-network
+# volumes:
+#   neo4j-data:
+#   neo4j-logs:

@@ -1,0 +1,46 @@
+[
+  {
+    "query": "What is hybrid retrieval?",
+    "language": "en",
+    "relevant_docs": ["doc1", "doc3"],
+    "relevance_scores": {
+      "doc1": 1.0,
+      "doc3": 0.8,
+      "doc2": 0.3
+    }
+  },
+  {
+    "query": "How does knowledge graph help in retrieval?",
+    "language": "en",
+    "relevant_docs": ["doc2"],
+    "relevance_scores": {
+      "doc2": 1.0,
+      "doc1": 0.2
+    }
+  },
+  {
+    "query": "Explain reciprocal rank fusion",
+    "language": "en",
+    "relevant_docs": ["doc3"],
+    "relevance_scores": {
+      "doc3": 1.0,
+      "doc1": 0.3
+    }
+  },
+  {
+    "query": "ما هي أنظمة الاسترجاع الهجينة؟",
+    "language": "ar",
+    "relevant_docs": ["doc4"],
+    "relevance_scores": {
+      "doc4": 1.0
+    }
+  },
+  {
+    "query": "¿Qué es la recuperación híbrida?",
+    "language": "es",
+    "relevant_docs": ["doc5"],
+    "relevance_scores": {
+      "doc5": 1.0
+    }
+  }
+]
