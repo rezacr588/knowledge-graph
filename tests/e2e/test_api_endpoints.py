@@ -108,6 +108,27 @@ class TestQueryEndpoint:
         assert response.status_code == 500
         assert "No documents indexed" in response.json()["detail"]
 
+    def test_query_arabic_document(self, client):
+        """Ensure Arabic documents can be retrieved through the API."""
+        arabic_text = "الذكاء الاصطناعي مجال واسع يتضمن التعلم الآلي ومعالجة اللغة الطبيعية."
+        files = {"file": ("arabic.txt", arabic_text.encode("utf-8"), "text/plain")}
+
+        ingest_response = client.post("/api/ingest", files=files, data={"language": "ar"})
+        assert ingest_response.status_code == 200
+
+        query_payload = {
+            "query": "ما هو الذكاء الاصطناعي؟",
+            "top_k": 5,
+            "language": "ar",
+            "retrieval_methods": ["bm25"]
+        }
+
+        response = client.post("/api/query", json=query_payload)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["results"], "Arabic query should return at least one result"
+        assert result["results"][0]["language"] == "ar"
+
 
 @pytest.mark.e2e
 class TestChunksEndpoint:

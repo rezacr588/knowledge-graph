@@ -95,6 +95,17 @@ async def hybrid_search(request: QueryRequest):
                 logger.warning(f"Graph search failed: {e}")
         
         retrieval_time = (time.time() - retrieval_start) * 1000
+
+        available_results = [
+            results for results in results_dict.values() if results
+        ]
+
+        if not available_results:
+            logger.warning(f"[{request_id}] No retriever returned any results.")
+            raise HTTPException(
+                status_code=500,
+                detail="No documents indexed. Please ingest data before querying."
+            )
         
         # Fusion
         fusion_start = time.time()

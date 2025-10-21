@@ -2,7 +2,7 @@
 Document ingestion routes
 """
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks, Form
 from fastapi.responses import StreamingResponse
 import uuid
 import time
@@ -28,7 +28,7 @@ def get_app_state():
 @router.post("/stream")
 async def ingest_document_stream(
     file: UploadFile = File(...),
-    language: str = "en"
+    language: str = Form("en")
 ):
     """
     Ingest document with real-time progress updates via Server-Sent Events (SSE)
@@ -227,7 +227,7 @@ async def ingest_document_stream(
 @router.post("", response_model=IngestResponse)
 async def ingest_document(
     file: UploadFile = File(...),
-    language: str = "en",
+    language: str = Form("en"),
     background_tasks: BackgroundTasks = None
 ):
     """

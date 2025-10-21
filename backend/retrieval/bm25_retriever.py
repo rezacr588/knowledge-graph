@@ -175,7 +175,7 @@ class BM25Retriever:
         query: str, 
         top_k: int = 10,
         language: str = 'en',
-        min_score: float = 0.0
+        min_score: Optional[float] = None
     ) -> List[BM25Result]:
         """
         Search documents using BM25 scoring
@@ -213,9 +213,11 @@ class BM25Retriever:
         
         # Build results
         results = []
+        threshold = float("-inf") if min_score is None else min_score
+
         for rank, idx in enumerate(top_indices, start=1):
             score = scores[idx]
-            if score > min_score:
+            if score >= threshold:
                 doc = self.documents[idx]
                 doc_language = doc.get('language', 'en')
                 if language and doc_language != language:
@@ -228,7 +230,11 @@ class BM25Retriever:
                     language=doc_language
                 ))
         
-        logger.info(f"Found {len(results)} results with score >= {min_score}")
+        logger.info(
+            "Found %d results with score >= %s",
+            len(results),
+            "-inf" if threshold == float("-inf") else threshold
+        )
         return results
     
     def get_document_score(self, query: str, doc_id: str, language: str = 'en') -> float:
