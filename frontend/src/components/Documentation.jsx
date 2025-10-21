@@ -195,22 +195,26 @@ function Documentation() {
       <div className="bg-white rounded-lg shadow-lg p-6">
         <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
           <Database className="h-6 w-6 text-blue-600" />
-          <span>Knowledge Graph</span>
+          <span>Knowledge Graph Architecture</span>
         </h2>
         
         <p className="text-gray-700 mb-4">
-          The knowledge graph stores structured information extracted from your documents:
+          The knowledge graph is powered by <strong>Neo4j</strong>, a graph database that stores structured information 
+          extracted from your documents. It enables relationship-based retrieval that goes beyond simple keyword matching.
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex items-center space-x-2 mb-2">
               <FileText className="h-5 w-5 text-blue-600" />
               <h4 className="font-semibold text-blue-900">Documents & Chunks</h4>
             </div>
-            <p className="text-sm text-blue-800">
-              Documents are split into chunks. Each chunk maintains a link back to its source document.
+            <p className="text-sm text-blue-800 mb-2">
+              Documents are split into manageable chunks (paragraphs or sections). Each chunk maintains a link back to its source document.
             </p>
+            <div className="text-xs text-blue-700 bg-blue-100 rounded p-2 font-mono">
+              Document → HAS_CHUNK → Chunk
+            </div>
           </div>
 
           <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
@@ -218,9 +222,15 @@ function Documentation() {
               <Users className="h-5 w-5 text-purple-600" />
               <h4 className="font-semibold text-purple-900">Entities</h4>
             </div>
-            <p className="text-sm text-purple-800">
-              Named entities like people, organizations, locations, and concepts are extracted and stored.
+            <p className="text-sm text-purple-800 mb-2">
+              Named entities (PERSON, ORG, LOCATION, etc.) are extracted using spaCy NLP and Google Gemini AI. Each entity type gets a unique color in the graph.
             </p>
+            <div className="text-xs text-purple-700 bg-purple-100 rounded p-2 space-y-1">
+              <div>• PERSON: Individuals, names</div>
+              <div>• ORG: Companies, institutions</div>
+              <div>• GPE: Countries, cities</div>
+              <div>• TECH: Technologies, concepts</div>
+            </div>
           </div>
 
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
@@ -228,9 +238,177 @@ function Documentation() {
               <LinkIcon className="h-5 w-5 text-green-600" />
               <h4 className="font-semibold text-green-900">Relationships</h4>
             </div>
-            <p className="text-sm text-green-800">
-              Connections between entities and chunks are captured, enabling graph-based retrieval.
+            <p className="text-sm text-green-800 mb-2">
+              Connections between entities and chunks enable graph traversal. Finding one entity automatically finds related entities.
             </p>
+            <div className="text-xs text-green-700 bg-green-100 rounded p-2 font-mono">
+              Chunk → CONTAINS → Entity
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-r from-gray-50 to-gray-100 border border-gray-300 rounded-lg p-5">
+          <h4 className="font-semibold text-gray-900 mb-3 flex items-center">
+            <Network className="h-5 w-5 text-gray-600 mr-2" />
+            Graph Structure Example
+          </h4>
+          <div className="bg-white rounded p-4 font-mono text-xs overflow-x-auto">
+            <pre className="text-gray-700">
+{`(Document: "AI Research Paper")
+    |
+    +-- HAS_CHUNK --> (Chunk: "Introduction to AI")
+    |                      |
+    |                      +-- CONTAINS --> (Entity: "Machine Learning")
+    |                      |                     |
+    |                      |                     +-- RELATED_TO --> (Entity: "Deep Learning")
+    |                      |
+    |                      +-- CONTAINS --> (Entity: "Neural Networks")
+    |
+    +-- HAS_CHUNK --> (Chunk: "Applications")
+                           |
+                           +-- CONTAINS --> (Entity: "Computer Vision")
+                           +-- CONTAINS --> (Entity: "NLP")`}
+            </pre>
+          </div>
+          <p className="text-sm text-gray-600 mt-3">
+            <strong>How it helps:</strong> When you search for "Machine Learning", the system can traverse the graph 
+            to find related concepts like "Deep Learning" and "Neural Networks", even if your query didn't mention them explicitly.
+          </p>
+        </div>
+      </div>
+
+      {/* Retrieval Methods Deep Dive */}
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center space-x-2">
+          <Search className="h-6 w-6 text-purple-600" />
+          <span>Retrieval Methods Explained</span>
+        </h2>
+
+        <div className="space-y-6">
+          {/* BM25 */}
+          <div className="border-l-4 border-blue-500 bg-blue-50 rounded-r-lg p-5">
+            <h3 className="text-xl font-bold text-blue-900 mb-3 flex items-center">
+              <Search className="h-5 w-5 mr-2" />
+              1. BM25 (Best Matching 25)
+            </h3>
+            <p className="text-gray-700 mb-3">
+              <strong>Type:</strong> Sparse retrieval / Keyword-based search
+            </p>
+            <p className="text-gray-700 mb-3">
+              BM25 is a probabilistic ranking function that scores documents based on term frequency and document length. 
+              It's highly effective for finding exact keyword matches and technical terminology.
+            </p>
+            <div className="bg-white rounded-lg p-4 mb-3">
+              <p className="text-sm font-semibold text-gray-900 mb-2">How it works:</p>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                <li>Tokenizes documents and queries into individual words</li>
+                <li>Calculates term frequency (TF): How often a term appears in a document</li>
+                <li>Calculates inverse document frequency (IDF): How rare/common a term is across all documents</li>
+                <li>Normalizes by document length to prevent bias toward longer documents</li>
+                <li>Scores each document: Higher scores = better matches</li>
+              </ul>
+            </div>
+            <div className="bg-blue-100 rounded p-3">
+              <p className="text-sm text-blue-900">
+                <strong>Best for:</strong> Technical queries, proper nouns, acronyms, and exact phrase matching. 
+                Example: "What is the revenue in Q4 2023?"
+              </p>
+            </div>
+          </div>
+
+          {/* Dense Retrieval */}
+          <div className="border-l-4 border-purple-500 bg-purple-50 rounded-r-lg p-5">
+            <h3 className="text-xl font-bold text-purple-900 mb-3 flex items-center">
+              <Brain className="h-5 w-5 mr-2" />
+              2. Dense Retrieval (Semantic Search)
+            </h3>
+            <p className="text-gray-700 mb-3">
+              <strong>Type:</strong> Dense retrieval / Vector-based semantic search
+            </p>
+            <p className="text-gray-700 mb-3">
+              Dense retrieval uses <strong>Sentence Transformers</strong> to convert text into high-dimensional vectors (embeddings). 
+              It finds documents with similar meaning, even if they use different words.
+            </p>
+            <div className="bg-white rounded-lg p-4 mb-3">
+              <p className="text-sm font-semibold text-gray-900 mb-2">How it works:</p>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                <li>Converts text into 384-dimensional vectors using neural networks</li>
+                <li>Captures semantic meaning: "car" and "automobile" are close in vector space</li>
+                <li>Uses cosine similarity to find documents with similar embeddings</li>
+                <li>Handles synonyms, paraphrases, and conceptual similarity</li>
+                <li>Language-agnostic: Works across multiple languages</li>
+              </ul>
+            </div>
+            <div className="bg-purple-100 rounded p-3">
+              <p className="text-sm text-purple-900">
+                <strong>Best for:</strong> Conceptual queries, questions with different phrasing, semantic understanding. 
+                Example: "How do companies make money?" (finds text about "revenue generation" and "profit")</p>
+            </div>
+          </div>
+
+          {/* Graph Retrieval */}
+          <div className="border-l-4 border-green-500 bg-green-50 rounded-r-lg p-5">
+            <h3 className="text-xl font-bold text-green-900 mb-3 flex items-center">
+              <Network className="h-5 w-5 mr-2" />
+              3. Knowledge Graph Retrieval
+            </h3>
+            <p className="text-gray-700 mb-3">
+              <strong>Type:</strong> Structured retrieval / Relationship-based search
+            </p>
+            <p className="text-gray-700 mb-3">
+              Graph retrieval uses the knowledge graph to find information through entity relationships. 
+              It discovers connections that keyword or semantic search might miss.
+            </p>
+            <div className="bg-white rounded-lg p-4 mb-3">
+              <p className="text-sm font-semibold text-gray-900 mb-2">How it works:</p>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                <li>Extracts entities from your query using NLP</li>
+                <li>Finds matching entities in the knowledge graph</li>
+                <li>Traverses relationships: Entity → Chunk → Related Entities</li>
+                <li>Ranks chunks by number of entity matches and connection strength</li>
+                <li>Returns chunks that contain or are connected to query entities</li>
+              </ul>
+            </div>
+            <div className="bg-green-100 rounded p-3">
+              <p className="text-sm text-green-900">
+                <strong>Best for:</strong> Finding related information, discovering connections, entity-centric queries. 
+                Example: "Tell me about companies related to AI" (finds all organizations mentioned with AI entities)
+              </p>
+            </div>
+          </div>
+
+          {/* RRF Fusion */}
+          <div className="border-l-4 border-orange-500 bg-orange-50 rounded-r-lg p-5">
+            <h3 className="text-xl font-bold text-orange-900 mb-3 flex items-center">
+              <Zap className="h-5 w-5 mr-2" />
+              4. Reciprocal Rank Fusion (RRF)
+            </h3>
+            <p className="text-gray-700 mb-3">
+              RRF combines results from all three methods into a single, optimally-ranked list. 
+              It's based on the principle that documents appearing in multiple result sets are likely more relevant.
+            </p>
+            <div className="bg-white rounded-lg p-4 mb-3">
+              <p className="text-sm font-semibold text-gray-900 mb-2">How it works:</p>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                <li>Each method produces a ranked list of results</li>
+                <li>RRF assigns scores based on rank position: 1/(k + rank)</li>
+                <li>Default k=60 balances emphasis on top results</li>
+                <li>Scores are summed across all methods</li>
+                <li>Final list is sorted by combined RRF score</li>
+                <li>Results appearing high in multiple methods get boosted</li>
+              </ul>
+            </div>
+            <div className="bg-orange-100 rounded p-3">
+              <p className="text-sm text-orange-900">
+                <strong>Formula:</strong> RRF_score = Σ [ 1 / (k + rank_method) ] for each method
+              </p>
+            </div>
+            <div className="mt-3 bg-white rounded p-3 border border-orange-200">
+              <p className="text-sm text-gray-700">
+                <strong>Example:</strong> A chunk ranked #1 in BM25, #3 in Dense, and #2 in Graph will score higher 
+                than a chunk that's only #1 in one method but missing from the others.
+              </p>
+            </div>
           </div>
         </div>
       </div>

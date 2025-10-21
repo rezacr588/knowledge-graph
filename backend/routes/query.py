@@ -106,13 +106,17 @@ async def hybrid_search(request: QueryRequest):
         
         logger.info(f"[{request_id}] Fused to {len(fused_results)} results")
         
-        # Convert to response format
+        # Convert to response format (fused_results are FusedResult dataclass objects)
         results = [
             RetrievalResult(
-                chunk_id=r['chunk_id'],
-                text=r['text'],
-                score=r['score'],
-                source_ranks=r.get('source_ranks', {})
+                doc_id=r.doc_id,
+                chunk_id=r.chunk_id,
+                text=r.text,
+                rrf_score=r.rrf_score,
+                rank=r.rank,
+                language=r.language,
+                method_scores=r.method_scores,
+                method_ranks=r.method_ranks
             )
             for r in fused_results
         ]
@@ -125,7 +129,8 @@ async def hybrid_search(request: QueryRequest):
             results=results,
             retrieval_time_ms=retrieval_time,
             fusion_time_ms=fusion_time,
-            total_time_ms=total_time
+            total_time_ms=total_time,
+            methods_used=list(results_dict.keys())
         )
     
     except Exception as e:

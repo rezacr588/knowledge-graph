@@ -29,7 +29,7 @@ async def get_graph_stats():
         if not neo4j_client:
             raise HTTPException(status_code=503, detail="Neo4j not available")
         
-        stats = neo4j_client.get_stats()
+        stats = neo4j_client.get_graph_stats()
         return stats
     
     except HTTPException:
