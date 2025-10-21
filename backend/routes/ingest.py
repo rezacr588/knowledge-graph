@@ -12,6 +12,7 @@ import asyncio
 
 from backend.models.schemas import IngestResponse
 from backend.utils.logger import setup_logger
+from backend.storage.neo4j_client import Entity
 import os
 
 router = APIRouter(prefix="/ingest", tags=["ingestion"])
@@ -116,16 +117,24 @@ async def ingest_document_stream(
                     # Add entities to graph
                     if app_state.get('neo4j_client'):
                         for entity in entities:
-                            app_state['neo4j_client'].add_entity(
-                                entity_id=f"{entity.text}_{entity.type}".replace(" ", "_"),
-                                text=entity.text,
-                                entity_type=entity.type
-                            )
+                            entity_id = f"{entity.name}_{entity.type}".replace(" ", "_")
                             
-                            app_state['neo4j_client'].add_relationship(
+                            # Create Entity object
+                            entity_obj = Entity(
+                                id=entity_id,
+                                name=entity.name,
+                                type=entity.type,
+                                language=entity.language,
+                                confidence=entity.confidence,
+                                metadata={}
+                            )
+                            app_state['neo4j_client'].add_entity(entity_obj)
+                            
+                            # Link chunk to entity
+                            app_state['neo4j_client'].link_chunk_to_entity(
                                 chunk_id=chunk_id,
-                                entity_id=f"{entity.text}_{entity.type}".replace(" ", "_"),
-                                relationship_type="CONTAINS"
+                                entity_id=entity_id,
+                                confidence=entity.confidence
                             )
                             relationships_count += 1
                 
@@ -144,8 +153,8 @@ async def ingest_document_stream(
             if app_state.get('dense_retriever'):
                 yield update_progress("indexing_dense", 92, "Building dense embeddings...")
                 try:
-                    app_state['dense_retriever'].add_documents([
-                        {"id": f"{doc_id}_chunk_{i}", "text": chunk}
+                    app_state['dense_retriever'].index_documents([
+                        {"id": f"{doc_id}_chunk_{i}", "text": chunk, "language": language}
                         for i, chunk in enumerate(chunks)
                     ])
                 except Exception as e:
@@ -274,16 +283,24 @@ async def ingest_document(
                     
                     # Add entities to graph
                     for entity in entities:
-                        app_state['neo4j_client'].add_entity(
-                            entity_id=f"{entity.text}_{entity.type}".replace(" ", "_"),
-                            text=entity.text,
-                            entity_type=entity.type
-                        )
+                        entity_id = f"{entity.name}_{entity.type}".replace(" ", "_")
                         
-                        app_state['neo4j_client'].add_relationship(
+                        # Create Entity object
+                        entity_obj = Entity(
+                            id=entity_id,
+                            name=entity.name,
+                            type=entity.type,
+                            language=entity.language,
+                            confidence=entity.confidence,
+                            metadata={}
+                        )
+                        app_state['neo4j_client'].add_entity(entity_obj)
+                        
+                        # Link chunk to entity
+                        app_state['neo4j_client'].link_chunk_to_entity(
                             chunk_id=chunk_id,
-                            entity_id=f"{entity.text}_{entity.type}".replace(" ", "_"),
-                            relationship_type="CONTAINS"
+                            entity_id=entity_id,
+                            confidence=entity.confidence
                         )
         
         # Add to BM25 index
@@ -296,8 +313,8 @@ async def ingest_document(
         # Add to dense retriever (if available)
         if app_state.get('dense_retriever'):
             try:
-                app_state['dense_retriever'].add_documents([
-                    {"id": f"{doc_id}_chunk_{i}", "text": chunk}
+                app_state['dense_retriever'].index_documents([
+                    {"id": f"{doc_id}_chunk_{i}", "text": chunk, "language": language}
                     for i, chunk in enumerate(chunks)
                 ])
             except Exception as e:

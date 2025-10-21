@@ -51,7 +51,7 @@ async def get_graph_visualization(limit: int = 100):
         if not neo4j_client:
             raise HTTPException(status_code=503, detail="Neo4j not available")
         
-        graph_data = neo4j_client.get_visualization_data(limit=limit)
+        graph_data = neo4j_client.get_graph_visualization_data(limit=limit)
         return graph_data
     
     except HTTPException:

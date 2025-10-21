@@ -98,23 +98,38 @@ class Neo4jClient:
             language: Document language code
             metadata: Additional metadata
         """
-        query = """
-        MERGE (d:Document {id: $doc_id})
-        SET d.title = $title,
-            d.language = $language,
-            d.metadata = $metadata,
-            d.created_at = datetime()
-        RETURN d
-        """
+        # Build query dynamically based on whether metadata exists
+        if metadata:
+            query = """
+            MERGE (d:Document {id: $doc_id})
+            SET d.title = $title,
+                d.language = $language,
+                d.metadata = $metadata,
+                d.created_at = datetime()
+            RETURN d
+            """
+            params = {
+                "doc_id": doc_id,
+                "title": title,
+                "language": language,
+                "metadata": metadata
+            }
+        else:
+            query = """
+            MERGE (d:Document {id: $doc_id})
+            SET d.title = $title,
+                d.language = $language,
+                d.created_at = datetime()
+            RETURN d
+            """
+            params = {
+                "doc_id": doc_id,
+                "title": title,
+                "language": language
+            }
         
         with self.driver.session() as session:
-            session.run(
-                query,
-                doc_id=doc_id,
-                title=title,
-                language=language,
-                metadata=metadata or {}
-            )
+            session.run(query, **params)
         
         logger.info(f"Added document: {doc_id}")
     
@@ -138,28 +153,48 @@ class Neo4jClient:
             embedding_id: Vector embedding identifier
             metadata: Additional metadata (e.g., page number, section)
         """
-        query = """
-        MATCH (d:Document {id: $doc_id})
-        MERGE (c:Chunk {id: $chunk_id})
-        SET c.text = $text,
-            c.language = $language,
-            c.embedding_id = $embedding_id,
-            c.doc_id = $doc_id,
-            c.metadata = $metadata
-        MERGE (d)-[:CONTAINS]->(c)
-        RETURN c
-        """
+        # Build query dynamically based on whether metadata exists
+        if metadata:
+            query = """
+            MATCH (d:Document {id: $doc_id})
+            MERGE (c:Chunk {id: $chunk_id})
+            SET c.text = $text,
+                c.language = $language,
+                c.embedding_id = $embedding_id,
+                c.doc_id = $doc_id,
+                c.metadata = $metadata
+            MERGE (d)-[:CONTAINS]->(c)
+            RETURN c
+            """
+            params = {
+                "chunk_id": chunk_id,
+                "doc_id": doc_id,
+                "text": text,
+                "language": language,
+                "embedding_id": embedding_id,
+                "metadata": metadata
+            }
+        else:
+            query = """
+            MATCH (d:Document {id: $doc_id})
+            MERGE (c:Chunk {id: $chunk_id})
+            SET c.text = $text,
+                c.language = $language,
+                c.embedding_id = $embedding_id,
+                c.doc_id = $doc_id
+            MERGE (d)-[:CONTAINS]->(c)
+            RETURN c
+            """
+            params = {
+                "chunk_id": chunk_id,
+                "doc_id": doc_id,
+                "text": text,
+                "language": language,
+                "embedding_id": embedding_id
+            }
         
         with self.driver.session() as session:
-            session.run(
-                query,
-                chunk_id=chunk_id,
-                doc_id=doc_id,
-                text=text,
-                language=language,
-                embedding_id=embedding_id,
-                metadata=metadata or {}
-            )
+            session.run(query, **params)
         
         logger.debug(f"Added chunk: {chunk_id} to document: {doc_id}")
     
@@ -170,27 +205,46 @@ class Neo4jClient:
         Args:
             entity: Entity object
         """
-        query = """
-        MERGE (e:Entity {id: $id})
-        SET e.name = $name,
-            e.type = $type,
-            e.language = $language,
-            e.confidence = $confidence,
-            e.metadata = $metadata,
-            e.updated_at = datetime()
-        RETURN e
-        """
+        # Build query dynamically based on whether metadata exists
+        if entity.metadata:
+            query = """
+            MERGE (e:Entity {id: $id})
+            SET e.name = $name,
+                e.type = $type,
+                e.language = $language,
+                e.confidence = $confidence,
+                e.metadata = $metadata,
+                e.updated_at = datetime()
+            RETURN e
+            """
+            params = {
+                "id": entity.id,
+                "name": entity.name,
+                "type": entity.type,
+                "language": entity.language,
+                "confidence": entity.confidence,
+                "metadata": entity.metadata
+            }
+        else:
+            query = """
+            MERGE (e:Entity {id: $id})
+            SET e.name = $name,
+                e.type = $type,
+                e.language = $language,
+                e.confidence = $confidence,
+                e.updated_at = datetime()
+            RETURN e
+            """
+            params = {
+                "id": entity.id,
+                "name": entity.name,
+                "type": entity.type,
+                "language": entity.language,
+                "confidence": entity.confidence
+            }
         
         with self.driver.session() as session:
-            session.run(
-                query,
-                id=entity.id,
-                name=entity.name,
-                type=entity.type,
-                language=entity.language,
-                confidence=entity.confidence,
-                metadata=entity.metadata
-            )
+            session.run(query, **params)
     
     def link_chunk_to_entity(
         self,
@@ -229,24 +283,40 @@ class Neo4jClient:
         Args:
             relationship: Relationship object
         """
-        query = """
-        MATCH (e1:Entity {id: $source_id})
-        MATCH (e2:Entity {id: $target_id})
-        MERGE (e1)-[r:RELATES_TO {type: $rel_type}]->(e2)
-        SET r.confidence = $confidence,
-            r.metadata = $metadata
-        RETURN r
-        """
+        # Build query dynamically based on whether metadata exists
+        if relationship.metadata:
+            query = """
+            MATCH (e1:Entity {id: $source_id})
+            MATCH (e2:Entity {id: $target_id})
+            MERGE (e1)-[r:RELATES_TO {type: $rel_type}]->(e2)
+            SET r.confidence = $confidence,
+                r.metadata = $metadata
+            RETURN r
+            """
+            params = {
+                "source_id": relationship.source_id,
+                "target_id": relationship.target_id,
+                "rel_type": relationship.type,
+                "confidence": relationship.confidence,
+                "metadata": relationship.metadata
+            }
+        else:
+            query = """
+            MATCH (e1:Entity {id: $source_id})
+            MATCH (e2:Entity {id: $target_id})
+            MERGE (e1)-[r:RELATES_TO {type: $rel_type}]->(e2)
+            SET r.confidence = $confidence
+            RETURN r
+            """
+            params = {
+                "source_id": relationship.source_id,
+                "target_id": relationship.target_id,
+                "rel_type": relationship.type,
+                "confidence": relationship.confidence
+            }
         
         with self.driver.session() as session:
-            session.run(
-                query,
-                source_id=relationship.source_id,
-                target_id=relationship.target_id,
-                rel_type=relationship.type,
-                confidence=relationship.confidence,
-                metadata=relationship.metadata
-            )
+            session.run(query, **params)
     
     def find_entities_by_name(
         self,

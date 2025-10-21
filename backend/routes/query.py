@@ -48,7 +48,8 @@ async def hybrid_search(request: QueryRequest):
             bm25_results = app_state['bm25_retriever'].search(
                 query=request.query,
                 top_k=request.top_k,
-                language=request.language
+                language=request.language,
+                min_score=-999.0  # Allow negative scores for small corpuses
             )
             results_dict['bm25'] = bm25_results
             logger.info(f"[{request_id}] BM25: {len(bm25_results)} results")
