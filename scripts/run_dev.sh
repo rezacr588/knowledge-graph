@@ -9,6 +9,34 @@ VENV_BIN="${ROOT_DIR}/venv/bin"
 BACKEND_CMD=("${VENV_BIN}/uvicorn" "backend.main:app" "--reload" "--host" "0.0.0.0" "--port" "8000")
 FRONTEND_CMD=("npm" "run" "dev" "--" "--host")
 
+stop_existing_services() {
+  echo "🧹 Stopping any existing dev services..."
+
+  # Helper to terminate listeners on a given port
+  stop_port_listener() {
+    local port="$1"
+    if command -v lsof >/dev/null 2>&1; then
+      local pids
+      pids=$(lsof -t -i:"${port}" -sTCP:LISTEN 2>/dev/null || true)
+      if [[ -n "${pids}" ]]; then
+        echo "   • Terminating processes on port ${port}: ${pids}"
+        kill ${pids} 2>/dev/null || true
+      fi
+    fi
+  }
+
+  # Backend (uvicorn) cleanup
+  stop_port_listener 8000
+  pkill -f "uvicorn backend.main:app" 2>/dev/null || true
+
+  # Frontend (Vite) cleanup
+  stop_port_listener 5173
+  pkill -f "npm run dev" 2>/dev/null || true
+
+  # Allow processes time to exit
+  sleep 1
+}
+
 print_header() {
   echo "============================================================"
   echo " Hybrid RAG Dev Runner"
@@ -56,6 +84,9 @@ shutdown() {
 main() {
   print_header
   check_requirements
+
+  # Ensure no stale instances are running before starting new ones
+  stop_existing_services
 
   trap shutdown INT TERM EXIT
 
