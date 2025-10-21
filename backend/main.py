@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from backend.retrieval.bm25_retriever import BM25Retriever
 from backend.retrieval.graph_retriever import GraphRetriever
 from backend.storage.neo4j_client import Neo4jClient
+from backend.storage.chunk_store import ChunkStore
 from backend.services.entity_extraction import EntityExtractor
 from backend.services.chat_service import ChatService
 from backend.utils.logger import setup_logger
@@ -23,7 +24,8 @@ from backend.routes import (
     ingest_router,
     query_router,
     chat_router,
-    graph_router
+    graph_router,
+    chunks_router
 )
 
 # Load environment variables
@@ -32,16 +34,31 @@ load_dotenv()
 # Setup logging
 logger = setup_logger(os.getenv('LOG_LEVEL', 'INFO'))
 
-# Dense retriever import
+# Persistence configuration
+PERSIST_INGESTED_CONTENT = os.getenv('PERSIST_INGESTED_CONTENT', 'true').lower() in {
+    '1', 'true', 'yes', 'on'
+}
+INGESTED_CHUNKS_PATH = os.getenv(
+    'INGESTED_CHUNKS_PATH',
+    os.path.join(os.getcwd(), 'data', 'ingested_chunks.json')
+)
+
+# Dense retriever import (configurable via environment)
+ENABLE_DENSE_RETRIEVER = os.getenv('ENABLE_DENSE_RETRIEVER', 'true').lower() in {
+    '1', 'true', 'yes', 'on'
+}
 DENSE_AVAILABLE = False
 DenseRetriever = None
-try:
-    from backend.retrieval.dense_retriever import DenseRetriever
-    DENSE_AVAILABLE = True
-    logger.info("✅ Dense retriever module loaded successfully")
-except ImportError as e:
-    logger.warning(f"⚠️  Dense retriever not available: {e}")
-    logger.warning("⚠️  System will use BM25 and Graph retrieval only")
+if ENABLE_DENSE_RETRIEVER:
+    try:
+        from backend.retrieval.dense_retriever import DenseRetriever
+        DENSE_AVAILABLE = True
+        logger.info("✅ Dense retriever module loaded successfully")
+    except ImportError as e:
+        logger.warning(f"⚠️  Dense retriever not available: {e}")
+        logger.warning("⚠️  System will use BM25 and Graph retrieval only")
+else:
+    logger.info("ℹ️ Dense retriever disabled via ENABLE_DENSE_RETRIEVER flag")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -71,12 +88,22 @@ app_state = {
     'document_parser': None,
     'documents': [],
     'ingestion_reset_done': False,
-    'progress_trackers': {}
+    'progress_trackers': {},
+    'chunk_store': None,
+    'persist_ingested_content': PERSIST_INGESTED_CONTENT
 }
 
+if PERSIST_INGESTED_CONTENT:
+    app_state['ingestion_reset_done'] = True
 
-def reset_ingested_content() -> None:
+
+def reset_ingested_content(force: bool = False) -> None:
     """Remove any previously indexed documents across storage layers."""
+    if PERSIST_INGESTED_CONTENT and not force:
+        logger.info("🛑 Persistence enabled; skipping automatic reset of ingested content.")
+        app_state['ingestion_reset_done'] = True
+        return
+
     logger.info("🧹 Clearing previously ingested documents and indexes")
 
     if app_state.get('bm25_retriever'):
@@ -90,6 +117,9 @@ def reset_ingested_content() -> None:
 
     if app_state.get('neo4j_client'):
         app_state['neo4j_client'].clear_database()
+
+    if app_state.get('chunk_store'):
+        app_state['chunk_store'].clear()
 
     app_state['documents'] = []
     app_state['ingestion_reset_done'] = True
@@ -151,6 +181,31 @@ async def startup_event():
         # Initialize Document Parser
         app_state['document_parser'] = DocumentParser()
         logger.info("✅ Document parser initialized")
+
+        if PERSIST_INGESTED_CONTENT:
+            chunk_store = ChunkStore(INGESTED_CHUNKS_PATH)
+            app_state['chunk_store'] = chunk_store
+            persisted_chunks = chunk_store.load_all()
+
+            if persisted_chunks:
+                try:
+                    app_state['bm25_retriever'].index_documents(persisted_chunks)
+                    app_state['documents'] = persisted_chunks
+                    logger.info(
+                        "✅ Loaded %d persisted chunks into BM25 index", len(persisted_chunks)
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to hydrate BM25 index from disk: %s", exc)
+
+                dense_retriever = app_state.get('dense_retriever')
+                if dense_retriever and not getattr(dense_retriever, 'indexed', False):
+                    try:
+                        dense_retriever.index_documents(persisted_chunks)
+                        logger.info("✅ Rebuilt dense index from persisted chunks")
+                    except Exception as exc:
+                        logger.warning("Failed to rebuild dense index from disk: %s", exc)
+            else:
+                logger.info("ℹ️ No persisted chunks found at %s", INGESTED_CHUNKS_PATH)
         
         logger.info("✅ Hybrid RAG System started successfully!")
         
@@ -174,5 +229,6 @@ app.include_router(ingest_router, prefix="/api")
 app.include_router(query_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(graph_router, prefix="/api")
+app.include_router(chunks_router, prefix="/api")
 
 logger.info("✅ All routes registered")

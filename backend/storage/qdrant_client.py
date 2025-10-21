@@ -5,7 +5,7 @@ Handles vector storage and similarity search for dense retrieval
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import logging
 import numpy as np
 
@@ -180,6 +180,77 @@ class QdrantVectorStore:
         except Exception as e:
             logger.error(f"Error getting collection info: {e}")
             return {}
+    
+    def list_chunks_with_info(
+        self,
+        limit: Optional[int] = None,
+        batch_size: int = 128
+    ) -> Tuple[List[Dict], Dict]:
+        """
+        Retrieve stored chunks and accompanying collection info from Qdrant.
+
+        Args:
+            limit: Maximum number of chunks to return (None for all).
+            batch_size: Number of records to fetch per scroll call.
+
+        Returns:
+            Tuple of (chunk list, collection info dict).
+        """
+        collected_chunks: List[Dict] = []
+        next_offset = None
+
+        while True:
+            # Determine batch size respecting requested limit
+            current_batch = batch_size
+            if limit is not None:
+                remaining = limit - len(collected_chunks)
+                if remaining <= 0:
+                    break
+                current_batch = min(batch_size, remaining)
+
+            try:
+                scroll_result = self.client.scroll(
+                    collection_name=self.collection_name,
+                    limit=current_batch,
+                    offset=next_offset,
+                    with_payload=True,
+                    with_vectors=False
+                )
+            except Exception as e:
+                logger.error(f"Error scrolling Qdrant collection: {e}")
+                raise
+
+            # Handle both tuple and ScrollResult return signatures
+            if isinstance(scroll_result, tuple):
+                points, next_offset = scroll_result  # Older client versions
+            else:
+                points = getattr(scroll_result, "points", [])
+                next_offset = getattr(
+                    scroll_result,
+                    "next_page_offset",
+                    getattr(scroll_result, "next_offset", None)
+                )
+
+            if not points:
+                break
+
+            for point in points:
+                payload = getattr(point, "payload", {}) or {}
+                point_id = getattr(point, "id", None)
+                chunk_data = {
+                    'point_id': str(point_id) if point_id is not None else None,
+                    'doc_id': payload.get('doc_id', str(point_id) if point_id is not None else ""),
+                    'text': payload.get('text', ''),
+                    'language': payload.get('language', 'unknown'),
+                    'payload': payload
+                }
+                collected_chunks.append(chunk_data)
+
+            if next_offset is None:
+                break
+
+        info = self.get_collection_info()
+        return collected_chunks, info
     
     def close(self):
         """Close Qdrant connection"""

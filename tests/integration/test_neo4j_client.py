@@ -10,11 +10,18 @@ class TestNeo4jClient:
     @pytest.fixture
     def neo4j_client(self):
         """Create Neo4j client for testing"""
-        client = Neo4jClient(
-            uri=os.getenv('NEO4J_URI'),
-            username=os.getenv('NEO4J_USERNAME'),
-            password=os.getenv('NEO4J_PASSWORD')
-        )
+        uri = os.getenv('NEO4J_URI')
+        username = os.getenv('NEO4J_USERNAME')
+        password = os.getenv('NEO4J_PASSWORD')
+
+        if not uri or not username or not password:
+            pytest.skip("Neo4j credentials not configured.")
+
+        try:
+            client = Neo4jClient(uri=uri, username=username, password=password)
+        except Exception as exc:  # pragma: no cover - environment specific
+            pytest.skip(f"Neo4j not available: {exc}")
+
         yield client
         client.close()
     

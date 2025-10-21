@@ -88,6 +88,38 @@ function Documentation() {
         </div>
       </div>
 
+      {/* Ingestion Pipeline */}
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
+          <Upload className="h-6 w-6 text-blue-600" />
+          <span>Document Ingestion Pipeline</span>
+        </h2>
+        <p className="text-gray-700 mb-4">
+          Every document you upload flows through a deterministic pipeline so all downstream indexes stay in sync.
+          The `/api/ingest/stream` endpoint powers the Upload tab and emits real-time Server-Sent Events as each stage completes.
+        </p>
+        <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700 mb-4">
+          <li>
+            <strong>Document parsing:</strong> <code>DocumentParser</code> normalizes TXT, PDF, and DOCX uploads, handling encryption and encoding fallbacks automatically.
+          </li>
+          <li>
+            <strong>Chunking & IDs:</strong> File bytes are hashed into a stable <code>document_id</code>. Paragraph-level chunks inherit IDs such as <code>doc123_chunk_0</code> and store an <code>embedding_id</code> for vector lookup.
+          </li>
+          <li>
+            <strong>Graph persistence:</strong> <code>Neo4jClient.add_document</code> and <code>add_chunk</code> build <code>Document → CONTAINS → Chunk</code> structures inside Neo4j, keeping language and metadata attached.
+          </li>
+          <li>
+            <strong>Entity extraction:</strong> <code>EntityExtractor</code> (spaCy with optional Gemini validation) tags each chunk, upserts <code>Entity</code> nodes, and links them via <code>MENTIONS</code> relationships.
+          </li>
+          <li>
+            <strong>Index updates:</strong> BM25 ingests the same chunks for keyword search while the dense retriever encodes them for semantic search (in-memory or Qdrant-backed).
+          </li>
+        </ol>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
+          Progress updates such as 'Parsing...', 'Building BM25...', and 'Building dense embeddings...' mirror these steps so operators can monitor ingestion health from the UI.
+        </div>
+      </div>
+
       {/* How to Use */}
       <div className="bg-white rounded-lg shadow-lg p-6">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">How to Use</h2>
@@ -274,6 +306,33 @@ function Documentation() {
             <strong>How it helps:</strong> When you search for "Machine Learning", the system can traverse the graph 
             to find related concepts like "Deep Learning" and "Neural Networks", even if your query didn't mention them explicitly.
           </p>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <Search className="h-5 w-5 text-blue-600" />
+              <h4 className="font-semibold text-blue-900">Graph Retrieval Flow</h4>
+            </div>
+            <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+              <li>Query entities are extracted with the same <code>EntityExtractor</code> used during ingestion.</li>
+              <li>Neo4j lookups find the closest matching nodes (name + language aware).</li>
+              <li>Relevant chunks are ranked by confidence-weighted <code>MENTIONS</code> relationships.</li>
+              <li>Results feed into Reciprocal Rank Fusion alongside BM25 and dense scores.</li>
+            </ul>
+          </div>
+          <div className="bg-white border border-green-200 rounded-lg p-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <Database className="h-5 w-5 text-green-600" />
+              <h4 className="font-semibold text-green-900">Operational Notes</h4>
+            </div>
+            <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+              <li>Unique constraints on <code>Document</code>, <code>Chunk</code>, and <code>Entity</code> IDs keep the graph consistent.</li>
+              <li><code>/api/graph/stats</code> and <code>/api/graph/visualization</code> expose live graph health for the UI.</li>
+              <li><code>reset_ingested_content()</code> clears Neo4j, BM25, and dense stores together before a fresh ingest.</li>
+              <li>Entity relationships can be enriched with additional <code>RELATES_TO</code> edges for advanced traversal.</li>
+            </ul>
+          </div>
         </div>
       </div>
 

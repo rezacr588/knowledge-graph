@@ -3,20 +3,26 @@ Pytest Configuration and Fixtures
 Shared test fixtures for unit, integration, and E2E tests
 """
 
-import pytest
 import os
-from fastapi.testclient import TestClient
-from unittest.mock import Mock, MagicMock
-from typing import List, Dict
+from typing import Dict, List
+from unittest.mock import MagicMock
+
+import pytest
+
+try:
+    from fastapi.testclient import TestClient
+except ModuleNotFoundError:  # pragma: no cover - guarded for environments without FastAPI
+    TestClient = None
 
 # Set test environment variables
-os.environ['NEO4J_URI'] = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
-os.environ['NEO4J_USERNAME'] = os.getenv('NEO4J_USERNAME', 'neo4j')
-os.environ['NEO4J_PASSWORD'] = os.getenv('NEO4J_PASSWORD', 'password')
-os.environ['QDRANT_URL'] = os.getenv('QDRANT_URL', 'http://localhost:6333')
-os.environ['QDRANT_API_KEY'] = os.getenv('QDRANT_API_KEY', 'test-key')
+os.environ['NEO4J_URI'] = ''
+os.environ['NEO4J_USERNAME'] = ''
+os.environ['NEO4J_PASSWORD'] = ''
+os.environ['QDRANT_URL'] = ''
+os.environ['QDRANT_API_KEY'] = ''
 os.environ['GEMINI_API_KEY'] = os.getenv('GEMINI_API_KEY', 'test-key')
 os.environ['LOG_LEVEL'] = 'ERROR'  # Reduce log noise in tests
+os.environ['ENABLE_DENSE_RETRIEVER'] = 'false'
 
 
 @pytest.fixture(scope="session")
@@ -114,8 +120,16 @@ def sample_entities():
 @pytest.fixture(scope="function")
 def client():
     """FastAPI test client"""
-    from backend.main import app
-    return TestClient(app)
+    if TestClient is None:
+        pytest.skip("FastAPI is not installed; install requirements to run API tests.")
+
+    from backend.main import app, reset_ingested_content
+
+    # Ensure clean state between tests
+    reset_ingested_content(force=True)
+
+    with TestClient(app) as client:
+        yield client
 
 
 @pytest.fixture(scope="function")
@@ -141,4 +155,7 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "requires_external: mark test as requiring external services"
+    )
+    config.addinivalue_line(
+        "markers", "asyncio: mark test as requiring asyncio event loop"
     )

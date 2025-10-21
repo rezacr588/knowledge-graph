@@ -71,6 +71,9 @@ tmp/
 temp/
 *.tmp
 
+# Persisted ingestion data
+data/
+
 # Jupyter
 .ipynb_checkpoints/
 

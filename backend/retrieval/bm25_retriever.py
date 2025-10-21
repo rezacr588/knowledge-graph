@@ -8,7 +8,7 @@ from rank_bm25 import BM25Okapi
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
-from typing import List, Tuple, Dict, Optional
+from typing import List, Dict, Optional, Set
 import re
 import logging
 from dataclasses import dataclass
@@ -29,19 +29,32 @@ class MultilingualTokenizer:
     Multilingual tokenizer supporting English, Arabic, Spanish
     """
     def __init__(self):
-        # Download required NLTK data if not present
-        try:
-            stopwords.words('english')
-        except LookupError:
-            nltk.download('stopwords')
-            nltk.download('punkt')
-        
-        # Initialize stopwords for each language
-        self.stopwords = {
-            'en': set(stopwords.words('english')),
-            'es': set(stopwords.words('spanish')),
-            'ar': set(stopwords.words('arabic'))
+        self._use_nltk = True
+        self.stopwords: Dict[str, Set[str]] = {}
+
+        fallback_stopwords = {
+            'en': {'the', 'a', 'an', 'and', 'of', 'to', 'in', 'is', 'for', 'on'},
+            'es': {'el', 'la', 'los', 'las', 'de', 'y', 'en', 'que', 'es'},
+            'ar': {'و', 'في', 'من', 'على', 'أن', 'هو', 'هي'},
         }
+
+        try:
+            # Ensure stopwords and punkt tokeniser are available. If downloads are
+            # blocked (e.g. in CI without internet) we fall back to simple tokenisation.
+            stopwords.words('english')
+            stopwords.words('spanish')
+            stopwords.words('arabic')
+            nltk.data.find('tokenizers/punkt')
+
+            self.stopwords = {
+                'en': set(stopwords.words('english')),
+                'es': set(stopwords.words('spanish')),
+                'ar': set(stopwords.words('arabic')),
+            }
+        except Exception:
+            logger.warning("NLTK resources unavailable, using fallback stopwords.")
+            self._use_nltk = False
+            self.stopwords = fallback_stopwords
     
     def tokenize(self, text: str, language: str = 'en') -> List[str]:
         """
@@ -65,8 +78,16 @@ class MultilingualTokenizer:
             text = text.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
             text = text.replace('ة', 'ه')
         
-        # Tokenize
-        tokens = word_tokenize(text)
+        tokens: List[str]
+        if self._use_nltk:
+            try:
+                tokens = word_tokenize(text)
+            except LookupError:
+                logger.warning("word_tokenize failed; switching to regex tokeniser.")
+                self._use_nltk = False
+                tokens = re.findall(r"\w+", text, flags=re.UNICODE)
+        else:
+            tokens = re.findall(r"\w+", text, flags=re.UNICODE)
         
         # Remove stopwords and non-alphanumeric tokens
         tokens = [
@@ -97,6 +118,7 @@ class BM25Retriever:
         self.bm25: Optional[BM25Okapi] = None
         self.documents: List[Dict] = []
         self.tokenized_corpus: List[List[str]] = []
+        self.doc_ids: List[str] = []
         
         logger.info(f"Initialized BM25Retriever with k1={k1}, b={b}")
     
@@ -116,8 +138,16 @@ class BM25Retriever:
                 ]
         """
         logger.info(f"Indexing {len(documents)} documents...")
+
+        if not documents:
+            self.documents = []
+            self.tokenized_corpus = []
+            self.doc_ids = []
+            self.bm25 = None
+            return
         
         self.documents = documents
+        self.doc_ids = [doc['id'] for doc in documents]
         
         # Tokenize all documents
         self.tokenized_corpus = [
@@ -134,6 +164,11 @@ class BM25Retriever:
         
         logger.info(f"✅ Successfully indexed {len(documents)} documents")
         logger.info(f"   Average document length: {self.bm25.avgdl:.2f} tokens")
+
+    # Backwards compatibility for older code/tests calling `.index(...)`
+    def index(self, documents: List[Dict]) -> None:
+        """Alias for index_documents."""
+        self.index_documents(documents)
     
     def search(
         self, 
@@ -154,12 +189,17 @@ class BM25Retriever:
         Returns:
             List of BM25Result objects sorted by score (descending)
         """
-        if self.bm25 is None:
-            raise ValueError("No documents indexed. Call index_documents() first.")
+        if self.bm25 is None or not self.documents:
+            logger.info("Search requested before indexing; returning empty result.")
+            return []
         
         # Tokenize query
         tokenized_query = self.tokenizer.tokenize(query, language)
         logger.info(f"Query tokens: {tokenized_query}")
+
+        if not tokenized_query:
+            logger.info("Empty tokenised query; returning empty result set.")
+            return []
         
         # Get BM25 scores for all documents
         scores = self.bm25.get_scores(tokenized_query)
@@ -175,14 +215,17 @@ class BM25Retriever:
         results = []
         for rank, idx in enumerate(top_indices, start=1):
             score = scores[idx]
-            if score >= min_score:
+            if score > min_score:
                 doc = self.documents[idx]
+                doc_language = doc.get('language', 'en')
+                if language and doc_language != language:
+                    continue
                 results.append(BM25Result(
                     doc_id=doc['id'],
                     score=float(score),
                     rank=rank,
                     text=doc['text'],
-                    language=doc.get('language', 'en')
+                    language=doc_language
                 ))
         
         logger.info(f"Found {len(results)} results with score >= {min_score}")

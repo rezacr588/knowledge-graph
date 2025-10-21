@@ -71,6 +71,19 @@ async def ingest_document_stream(
             yield update_progress("chunking", 25, "Creating document chunks...")
             chunks = [chunk.strip() for chunk in text.split('\n\n') if chunk.strip()]
             total_chunks = len(chunks)
+            doc_objects = [
+                {
+                    "id": f"{doc_id}_chunk_{i}",
+                    "text": chunk_text,
+                    "language": language,
+                    "metadata": {
+                        "document_id": doc_id,
+                        "chunk_index": i,
+                        "source": filename
+                    }
+                }
+                for i, chunk_text in enumerate(chunks)
+            ]
             await asyncio.sleep(0.1)
             
             # Stage 4: Storing in Neo4j
@@ -140,23 +153,39 @@ async def ingest_document_stream(
                 
                 await asyncio.sleep(0.05)  # Small delay for real-time feel
             
+            # Merge new chunks with existing in-memory documents
+            existing_docs = {
+                doc['id']: doc
+                for doc in app_state.get('documents', [])
+                if isinstance(doc, dict) and doc.get('id')
+            }
+            for doc in doc_objects:
+                existing_docs[doc['id']] = doc
+            app_state['documents'] = list(existing_docs.values())
+
+            # Persist to disk if configured
+            if app_state.get('chunk_store'):
+                app_state['documents'] = app_state['chunk_store'].upsert(app_state['documents'])
+                logger.info(
+                    f"[{request_id}] Persisted {len(doc_objects)} chunks "
+                    f"(total stored: {len(app_state['documents'])})"
+                )
+
             # Stage 5: Building BM25 index
             yield update_progress("indexing_bm25", 85, "Building BM25 search index...")
-            if app_state.get('bm25_retriever'):
-                app_state['bm25_retriever'].index_documents([
-                    {"id": f"{doc_id}_chunk_{i}", "text": chunk, "language": language}
-                    for i, chunk in enumerate(chunks)
-                ])
+            if app_state.get('bm25_retriever') and app_state['documents']:
+                app_state['bm25_retriever'].index_documents(app_state['documents'])
             await asyncio.sleep(0.2)
             
             # Stage 6: Building dense index (if available)
             if app_state.get('dense_retriever'):
                 yield update_progress("indexing_dense", 92, "Building dense embeddings...")
                 try:
-                    app_state['dense_retriever'].index_documents([
-                        {"id": f"{doc_id}_chunk_{i}", "text": chunk, "language": language}
-                        for i, chunk in enumerate(chunks)
-                    ])
+                    dense_retriever = app_state['dense_retriever']
+                    if getattr(dense_retriever, "use_qdrant", False) and dense_retriever.use_qdrant:
+                        dense_retriever.index_documents(doc_objects)
+                    elif app_state['documents']:
+                        dense_retriever.index_documents(app_state['documents'])
                 except Exception as e:
                     logger.warning(f"Dense indexing failed: {e}")
                 await asyncio.sleep(0.2)
@@ -251,6 +280,20 @@ async def ingest_document(
         # Simple chunking (split by paragraphs)
         chunks = [chunk.strip() for chunk in text.split('\n\n') if chunk.strip()]
         logger.info(f"[{request_id}] Created {len(chunks)} chunks")
+
+        doc_objects = [
+            {
+                "id": f"{doc_id}_chunk_{i}",
+                "text": chunk_text,
+                "language": language,
+                "metadata": {
+                    "document_id": doc_id,
+                    "chunk_index": i,
+                    "source": file.filename
+                }
+            }
+            for i, chunk_text in enumerate(chunks)
+        ]
         
         # Store document and chunks in Neo4j
         entities_count = 0
@@ -302,21 +345,35 @@ async def ingest_document(
                             entity_id=entity_id,
                             confidence=entity.confidence
                         )
+
+        # Merge new chunks with existing in-memory documents
+        existing_docs = {
+            doc['id']: doc for doc in app_state.get('documents', []) if isinstance(doc, dict) and doc.get('id')
+        }
+        for doc in doc_objects:
+            existing_docs[doc['id']] = doc
+        app_state['documents'] = list(existing_docs.values())
+
+        # Persist to disk if configured
+        if app_state.get('chunk_store'):
+            app_state['documents'] = app_state['chunk_store'].upsert(app_state['documents'])
+            logger.info(
+                f"[{request_id}] Persisted {len(doc_objects)} chunks "
+                f"(total stored: {len(app_state['documents'])})"
+            )
         
         # Add to BM25 index
-        if app_state.get('bm25_retriever'):
-            app_state['bm25_retriever'].index_documents([
-                {"id": f"{doc_id}_chunk_{i}", "text": chunk, "language": language}
-                for i, chunk in enumerate(chunks)
-            ])
+        if app_state.get('bm25_retriever') and app_state['documents']:
+            app_state['bm25_retriever'].index_documents(app_state['documents'])
         
         # Add to dense retriever (if available)
-        if app_state.get('dense_retriever'):
+        if app_state.get('dense_retriever') and app_state['documents']:
             try:
-                app_state['dense_retriever'].index_documents([
-                    {"id": f"{doc_id}_chunk_{i}", "text": chunk, "language": language}
-                    for i, chunk in enumerate(chunks)
-                ])
+                dense_retriever = app_state['dense_retriever']
+                if getattr(dense_retriever, "use_qdrant", False) and dense_retriever.use_qdrant:
+                    dense_retriever.index_documents(doc_objects)
+                else:
+                    dense_retriever.index_documents(app_state['documents'])
             except Exception as e:
                 logger.warning(f"[{request_id}] Dense indexing failed: {e}")
         

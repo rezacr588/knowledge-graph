@@ -48,6 +48,25 @@ Production-grade Hybrid Retrieval-Augmented Generation system combining **BM25 s
       └──────────────┘    └──────────────┘
 ```
 
+### Ingestion Pipeline (Backend `/api/ingest/stream`)
+
+1. **Document parsing** – `DocumentParser` normalizes uploads (TXT, PDF, DOCX) into plain text while handling encryption and encoding edge cases.
+2. **Chunking & IDs** – File bytes are hashed to create a deterministic `document_id`. Text is split on paragraph boundaries into `Chunk` records with IDs such as `doc123_chunk_0`.
+3. **Graph persistence** – `Neo4jClient.add_document` stores the document, and each chunk is attached through `(:Document)-[:CONTAINS]->(:Chunk)` relationships. Chunks keep the `embedding_id` that ties them to the dense index.
+4. **Entity extraction** – `EntityExtractor` (spaCy with optional Gemini validation) tags entities per chunk. Each entity is normalized into a unique `(:Entity)` node and linked via `(:Chunk)-[:MENTIONS {confidence}]->(:Entity)`.
+5. **Search index updates** – The same chunks feed the sparse and dense retrievers. BM25 builds an in-memory corpus; the dense retriever encodes with Sentence Transformers and stores vectors in-memory or in Qdrant when configured.
+6. **Streaming progress** – The `/stream` endpoint emits Server-Sent Events at each stage (parse, chunk, graph, index) so the UI can render live progress and final ingest statistics.
+
+Legacy `/api/ingest` follows the same flow without SSE updates.
+
+### Knowledge Graph Layer
+
+- **Schema** – Neo4j stores three core node types: `Document`, `Chunk`, and `Entity`. Automatic constraints keep IDs unique, and indexes accelerate lookups by entity name, type, and language.
+- **Entity enrichment** – `Neo4jClient.add_entity` upserts nodes so repeats across documents merge. The client also exposes `add_relationship` for higher-order graphs such as `(:Entity)-[:RELATES_TO]->(:Entity)` stemming from future co-occurrence or LLM enrichment jobs.
+- **Graph retrieval** – For queries that request the `graph` method, `GraphRetriever` reuses the `EntityExtractor` to identify mentions in the question, matches them against existing nodes, and ranks connected chunks via confidence-weighted traversal.
+- **Operational endpoints** – `/api/graph/stats` reports node/edge counts, while `/api/graph/visualization` assembles trimmed subgraphs (entities, relationships, chunk snippets) for frontend visualizations.
+- **Reset strategy** – `reset_ingested_content()` now respects the `PERSIST_INGESTED_CONTENT` flag (enabled by default). Persisted chunks are reloaded into BM25 on startup so queries survive restarts; call `reset_ingested_content(force=True)` or set the flag to `false` when you need a clean slate.
+
 ## 🚀 Quick Start
 
 ### Development Setup (Recommended)
@@ -370,6 +389,8 @@ KnowledgeGraph/
 | `BM25_B` | BM25 b parameter | `0.75` |
 | `RRF_K` | RRF k parameter | `60` |
 | `LOG_LEVEL` | Logging level | `INFO` |
+| `PERSIST_INGESTED_CONTENT` | Keep ingested chunks and indexes across restarts | `true` |
+| `INGESTED_CHUNKS_PATH` | JSON file for persisted chunk metadata | `data/ingested_chunks.json` |
 
 ## 🔍 How It Works
 
