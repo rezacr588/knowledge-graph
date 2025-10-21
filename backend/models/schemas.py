@@ -125,7 +125,7 @@ class ChatRequest(BaseModel):
         description="Message language"
     )
     retrieval_methods: List[RetrievalMethodEnum] = Field(
-        default=[RetrievalMethodEnum.BM25, RetrievalMethodEnum.COLBERT, RetrievalMethodEnum.GRAPH],
+        default=[RetrievalMethodEnum.BM25, RetrievalMethodEnum.DENSE, RetrievalMethodEnum.GRAPH],
         description="Retrieval methods to use"
     )
 

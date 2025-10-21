@@ -129,6 +129,56 @@ class TestQueryEndpoint:
         assert result["results"], "Arabic query should return at least one result"
         assert result["results"][0]["language"] == "ar"
 
+    def test_query_multilingual_corpus(self, client):
+        """Verify retrieval when both English and Arabic documents exist."""
+        english_docs = [
+            "Machine learning enables systems to learn from data without explicit programming.",
+            "Neural networks are a subset of machine learning inspired by the human brain.",
+            "Embeddings allow us to represent text in a dense vector space for semantic search."
+        ]
+        arabic_docs = [
+            "تحليل البيانات يساعد الشركات على اتخاذ قرارات أفضل بناءً على الأدلة.",
+            "الشبكات العصبية الاصطناعية تحاكي عمل العصبونات في الدماغ لمعالجة المعلومات.",
+            "تستخدم المعاجم الدلالية لتمثيل الكلمات في فضاء متجهات لفهم المعنى."
+        ]
+
+        # Ingest English documents
+        for idx, text in enumerate(english_docs):
+            files = {"file": (f"english_{idx}.txt", text.encode("utf-8"), "text/plain")}
+            response = client.post("/api/ingest", files=files, data={"language": "en"})
+            assert response.status_code == 200
+
+        # Ingest Arabic documents
+        for idx, text in enumerate(arabic_docs):
+            files = {"file": (f"arabic_{idx}.txt", text.encode("utf-8"), "text/plain")}
+            response = client.post("/api/ingest", files=files, data={"language": "ar"})
+            assert response.status_code == 200
+
+        english_query = {
+            "query": "How do neural networks work?",
+            "top_k": 5,
+            "language": "en",
+            "retrieval_methods": ["bm25", "dense"]
+        }
+        arabic_query = {
+            "query": "كيف تعمل الشبكات العصبية الاصطناعية؟",
+            "top_k": 5,
+            "language": "ar",
+            "retrieval_methods": ["bm25", "dense"]
+        }
+
+        en_response = client.post("/api/query", json=english_query)
+        assert en_response.status_code == 200
+        en_results = en_response.json()["results"]
+        assert en_results, "Expected English query to return results"
+        assert en_results[0]["language"] == "en"
+
+        ar_response = client.post("/api/query", json=arabic_query)
+        assert ar_response.status_code == 200
+        ar_results = ar_response.json()["results"]
+        assert ar_results, "Expected Arabic query to return results"
+        assert ar_results[0]["language"] == "ar"
+
 
 @pytest.mark.e2e
 class TestChunksEndpoint:

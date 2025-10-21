@@ -177,17 +177,17 @@ async def ingest_document_stream(
                 app_state['bm25_retriever'].index_documents(app_state['documents'])
             await asyncio.sleep(0.2)
             
-            # Stage 6: Building dense index (if available)
+            # Stage 6: Building dense index in Qdrant
             if app_state.get('dense_retriever'):
-                yield update_progress("indexing_dense", 92, "Building dense embeddings...")
+                yield update_progress("indexing_dense", 92, "Storing embeddings in Qdrant...")
                 try:
-                    dense_retriever = app_state['dense_retriever']
-                    if getattr(dense_retriever, "use_qdrant", False) and dense_retriever.use_qdrant:
-                        dense_retriever.index_documents(doc_objects)
-                    elif app_state['documents']:
-                        dense_retriever.index_documents(app_state['documents'])
+                    app_state['dense_retriever'].index_documents(doc_objects)
+                    logger.info(f"[{request_id}] Successfully indexed {len(doc_objects)} chunks in Qdrant")
                 except Exception as e:
-                    logger.warning(f"Dense indexing failed: {e}")
+                    logger.error(f"[{request_id}] Qdrant indexing failed: {e}")
+                    error_msg = f"Qdrant indexing failed: {str(e)}"
+                    yield update_progress("error", 92, error_msg)
+                    raise
                 await asyncio.sleep(0.2)
             
             # Complete
@@ -366,16 +366,17 @@ async def ingest_document(
         if app_state.get('bm25_retriever') and app_state['documents']:
             app_state['bm25_retriever'].index_documents(app_state['documents'])
         
-        # Add to dense retriever (if available)
-        if app_state.get('dense_retriever') and app_state['documents']:
+        # Add to dense retriever (Qdrant)
+        if app_state.get('dense_retriever'):
             try:
-                dense_retriever = app_state['dense_retriever']
-                if getattr(dense_retriever, "use_qdrant", False) and dense_retriever.use_qdrant:
-                    dense_retriever.index_documents(doc_objects)
-                else:
-                    dense_retriever.index_documents(app_state['documents'])
+                app_state['dense_retriever'].index_documents(doc_objects)
+                logger.info(f"[{request_id}] Successfully indexed {len(doc_objects)} chunks in Qdrant")
             except Exception as e:
-                logger.warning(f"[{request_id}] Dense indexing failed: {e}")
+                logger.error(f"[{request_id}] Qdrant indexing failed: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to index chunks in Qdrant: {str(e)}"
+                )
         
         processing_time = (time.time() - start_time) * 1000
         logger.info(f"[{request_id}] Ingestion completed in {processing_time:.2f}ms")

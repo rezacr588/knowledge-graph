@@ -7,7 +7,7 @@ import HealthStatus from './components/HealthStatus'
 import ChatInterface from './components/ChatInterface'
 import GraphVisualization from './components/GraphVisualization'
 import Documentation from './components/Documentation'
-import QdrantChunks from './components/QdrantChunks'
+import StoredChunks from './components/StoredChunks'
 import './App.css'
 
 function App() {
@@ -156,7 +156,7 @@ function App() {
         ) : activeTab === 'graph' ? (
           <GraphVisualization />
         ) : activeTab === 'chunks' ? (
-          <QdrantChunks />
+          <StoredChunks />
         ) : (
           <Documentation />
         )}

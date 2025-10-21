@@ -82,25 +82,22 @@ class QdrantVectorStore:
         Add vectors to Qdrant
         
         Args:
-            ids: List of document IDs
+            ids: List of document IDs (must be unique)
             vectors: Numpy array of vectors (n_docs x vector_size)
             payloads: Optional metadata for each vector
         """
         if payloads is None:
             payloads = [{} for _ in ids]
         
+        # Use doc_id as point ID (convert to hash for consistency)
         points = [
             PointStruct(
-                id=idx,
+                id=hash(doc_id) & 0x7FFFFFFFFFFFFFFF,  # Use hash of doc_id as point ID (positive int64)
                 vector=vector.tolist(),
-                payload=payload
+                payload={**payload, 'doc_id': doc_id}  # Include doc_id in payload
             )
-            for idx, (vector, payload) in enumerate(zip(vectors, payloads))
+            for doc_id, vector, payload in zip(ids, vectors, payloads)
         ]
-        
-        # Store original IDs in payload
-        for point, doc_id in zip(points, ids):
-            point.payload['doc_id'] = doc_id
         
         self.client.upsert(
             collection_name=self.collection_name,

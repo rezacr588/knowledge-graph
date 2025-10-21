@@ -1,12 +1,12 @@
 # Hybrid RAG System 🚀
 
-Production-grade Hybrid Retrieval-Augmented Generation system combining **BM25 sparse retrieval**, **ColBERT dense retrieval**, and **Knowledge Graph traversal** with **Reciprocal Rank Fusion (RRF)**.
+Production-grade Hybrid Retrieval-Augmented Generation system combining **BM25 sparse retrieval**, **Dense neural retrieval (Sentence Transformers)**, and **Knowledge Graph traversal** with **Reciprocal Rank Fusion (RRF)**.
 
 ## ✨ Key Features
 
 - **🔍 Hybrid Retrieval**: Combines 3 complementary methods
   - **BM25**: Sparse keyword-based retrieval (Robertson et al., 1995)
-  - **ColBERT**: Dense late-interaction retrieval (Santhanam et al., 2022)
+  - **Dense Retrieval**: Semantic search with Sentence Transformers (Reimers & Gurevych, 2019)
   - **Graph**: Entity-based knowledge graph traversal
   
 - **🔗 Reciprocal Rank Fusion**: Sophisticated fusion strategy combining ranked lists
@@ -23,28 +23,31 @@ Production-grade Hybrid Retrieval-Augmented Generation system combining **BM25 s
 └──────┬──────┘
        │
 ┌──────▼──────────────────────────────────────┐
-│         FastAPI Backend                      │
-│  ┌────────────────────────────────────────┐ │
-│  │      Hybrid Retrieval Pipeline         │ │
-│  │  ┌──────┐  ┌────────┐  ┌───────────┐  │ │
-│  │  │ BM25 │  │ColBERT │  │   Graph   │  │ │
-│  │  └───┬──┘  └───┬────┘  └─────┬─────┘  │ │
-│  │      │         │              │        │ │
-│  │      └─────────┴──────────────┘        │ │
-│  │               │                        │ │
-│  │         ┌─────▼─────┐                  │ │
-│  │         │ RRF Fusion│                  │ │
-│  │         └─────┬─────┘                  │ │
-│  │               │                        │ │
-│  │         ┌─────▼─────┐                  │ │
-│  │         │  Results  │                  │ │
-│  │         └───────────┘                  │ │
-│  └────────────────────────────────────────┘ │
-└───────────────┬──────────────┬──────────────┘
+│         FastAPI Backend                       │
+│  ┌────────────────────────────────────────┐  │
+│  │      Hybrid Retrieval Pipeline         │  │
+│  │  ┌──────┐  ┌────────┐  ┌───────────┐  │  │
+│  │  │ BM25 │  │ Dense  │  │   Graph   │  │  │
+│  │  │      │  │(SBert) │  │           │  │  │
+│  │  └───┬──┘  └───┬────┘  └─────┬─────┘  │  │
+│  │      │         │              │        │  │
+│  │      └─────────┴──────────────┘        │  │
+│  │               │                        │  │
+│  │         ┌─────▼─────┐                  │  │
+│  │         │ RRF Fusion│                  │  │
+│  │         └─────┬─────┘                  │  │
+│  │               │                        │  │
+│  │         ┌─────▼─────┐                  │  │
+│  │         │  Results  │                  │  │
+│  │         └───────────┘                  │  │
+│  └────────────────────────────────────────┘  │
+└───────────────┬──────────────┬───────────────┘
                 │              │
       ┌─────────▼────┐    ┌────▼─────────┐
-      │  Neo4j Graph │    │ Qdrant Vector│
+      │  Neo4j Graph │    │Qdrant Vector │
       │   Database   │    │   Database   │
+      │ (Chunks +    │    │ (Embeddings) │
+      │  Entities)   │    │              │
       └──────────────┘    └──────────────┘
 ```
 
@@ -52,9 +55,12 @@ Production-grade Hybrid Retrieval-Augmented Generation system combining **BM25 s
 
 1. **Document parsing** – `DocumentParser` normalizes uploads (TXT, PDF, DOCX) into plain text while handling encryption and encoding edge cases.
 2. **Chunking & IDs** – File bytes are hashed to create a deterministic `document_id`. Text is split on paragraph boundaries into `Chunk` records with IDs such as `doc123_chunk_0`.
-3. **Graph persistence** – `Neo4jClient.add_document` stores the document, and each chunk is attached through `(:Document)-[:CONTAINS]->(:Chunk)` relationships. Chunks keep the `embedding_id` that ties them to the dense index.
+3. **Graph persistence** – `Neo4jClient.add_document` stores the document, and each chunk is attached through `(:Document)-[:CONTAINS]->(:Chunk)` relationships. Chunks keep the `embedding_id` that ties them to Qdrant vectors.
 4. **Entity extraction** – `EntityExtractor` (spaCy with optional Gemini validation) tags entities per chunk. Each entity is normalized into a unique `(:Entity)` node and linked via `(:Chunk)-[:MENTIONS {confidence}]->(:Entity)`.
-5. **Search index updates** – The same chunks feed the sparse and dense retrievers. BM25 builds an in-memory corpus; the dense retriever encodes with Sentence Transformers and stores vectors in-memory or in Qdrant when configured.
+5. **Search index updates** – The same chunks feed all retrievers:
+   - **BM25**: Builds in-memory inverted index with optional disk persistence
+   - **Dense Retrieval**: Encodes chunks using Sentence Transformers (all-MiniLM-L6-v2) and stores 384-dim vectors in **Qdrant** with chunk IDs aligned to Neo4j
+   - Chunk IDs are identical across Neo4j and Qdrant for seamless cross-referencing
 6. **Streaming progress** – The `/stream` endpoint emits Server-Sent Events at each stage (parse, chunk, graph, index) so the UI can render live progress and final ingest statistics.
 
 Legacy `/api/ingest` follows the same flow without SSE updates.
@@ -189,7 +195,7 @@ curl -X POST "http://localhost:8000/query" \
     "query": "What is hybrid retrieval?",
     "top_k": 10,
     "language": "en",
-    "retrieval_methods": ["bm25", "colbert", "graph"],
+    "retrieval_methods": ["bm25", "dense", "graph"],
     "rrf_k": 60
   }'
 
@@ -205,12 +211,12 @@ curl -X POST "http://localhost:8000/query" \
       "language": "en",
       "method_scores": {
         "bm25": 15.3,
-        "colbert": 0.89,
+        "dense": 0.89,
         "graph": 0.75
       },
       "method_ranks": {
         "bm25": 1,
-        "colbert": 2,
+        "dense": 2,
         "graph": 1
       }
     }
@@ -218,7 +224,7 @@ curl -X POST "http://localhost:8000/query" \
   "retrieval_time_ms": 245.8,
   "fusion_time_ms": 12.3,
   "total_time_ms": 258.1,
-  "methods_used": ["bm25", "colbert", "graph"]
+  "methods_used": ["bm25", "dense", "graph"]
 }
 
 ### 3b. Run Backend Locally, Frontend/Redis in Docker
@@ -246,7 +252,7 @@ Comparison of retrieval methods on test dataset:
 | Method | MRR | NDCG@10 | Recall@10 |
 |--------|-----|---------|-----------|
 | BM25 only | 0.65 | 0.70 | 0.72 |
-| ColBERT only | 0.72 | 0.76 | 0.78 |
+| Dense only | 0.72 | 0.76 | 0.78 |
 | Graph only | 0.58 | 0.63 | 0.65 |
 | **Hybrid (RRF)** | **0.81** | **0.85** | **0.87** |
 
@@ -352,19 +358,30 @@ Interactive API documentation available at:
 KnowledgeGraph/
 ├── backend/
 │   ├── retrieval/
-│   │   ├── bm25_retriever.py       # BM25 implementation
-│   │   ├── colbert_retriever.py    # ColBERT implementation
+│   │   ├── bm25_retriever.py       # BM25 sparse retrieval
+│   │   ├── dense_retriever.py      # Sentence Transformers dense retrieval
 │   │   ├── graph_retriever.py      # Graph traversal
 │   │   └── hybrid_fusion.py        # RRF fusion
 │   ├── services/
-│   │   └── entity_extraction.py    # Entity extraction
+│   │   ├── entity_extraction.py    # Entity extraction
+│   │   ├── chat_service.py         # Chat with LLM
+│   │   └── document_parser.py      # Document parsing
 │   ├── storage/
-│   │   └── neo4j_client.py         # Neo4j client
+│   │   ├── neo4j_client.py         # Neo4j graph client
+│   │   ├── qdrant_client.py        # Qdrant vector client
+│   │   └── chunk_store.py          # Persistent chunk storage
 │   ├── models/
 │   │   └── schemas.py              # Pydantic models
+│   ├── routes/
+│   │   ├── ingest.py               # Document ingestion
+│   │   ├── query.py                # Hybrid search
+│   │   ├── chat.py                 # RAG chat
+│   │   └── health.py               # Health checks
 │   ├── utils/
-│   │   └── logger.py               # Structured logging
+│   │   ├── logger.py               # Structured logging
+│   │   └── device.py               # Device detection (CPU/MPS/CUDA)
 │   └── main.py                     # FastAPI application
+├── frontend/                       # React UI
 ├── k8s/                            # Kubernetes manifests
 ├── evaluation/                     # Evaluation framework
 ├── Dockerfile                      # Container definition
@@ -384,6 +401,7 @@ KnowledgeGraph/
 | `NEO4J_PASSWORD` | Neo4j password | Required |
 | `QDRANT_URL` | Qdrant server URL | Required |
 | `QDRANT_API_KEY` | Qdrant API key | Required |
+| `QDRANT_COLLECTION_NAME` | Qdrant collection name | `documents` |
 | `GEMINI_API_KEY` | Google Gemini API key | Required |
 | `BM25_K1` | BM25 k1 parameter | `1.5` |
 | `BM25_B` | BM25 b parameter | `0.75` |
@@ -392,16 +410,26 @@ KnowledgeGraph/
 | `PERSIST_INGESTED_CONTENT` | Keep ingested chunks and indexes across restarts | `true` |
 | `INGESTED_CHUNKS_PATH` | JSON file for persisted chunk metadata | `data/ingested_chunks.json` |
 
+#### Sample Data Seeder
+
+With the backend running you can preload a multilingual corpus:
+
+```bash
+python scripts/seed_sample_documents.py --host http://localhost:8000
+```
+
+This ingests three English and three Arabic snippets so you can test retrieval and chat without manual uploads.
+
 ## 🔍 How It Works
 
 ### 1. Document Ingestion
 
-1. **Text Extraction**: Extract text from uploaded document
-2. **Chunking**: Split into semantic chunks
-3. **Entity Extraction**: Extract entities using spaCy + Gemini LLM
-4. **Graph Storage**: Store documents, chunks, entities in Neo4j
-5. **Vector Indexing**: Generate ColBERT embeddings, store in Qdrant
-6. **BM25 Indexing**: Build inverted index for keyword search
+1. **Text Extraction**: Extract text from uploaded document (TXT, PDF, DOCX)
+2. **Chunking**: Split into semantic chunks with deterministic IDs (`doc123_chunk_0`)
+3. **Entity Extraction**: Extract entities using spaCy + Gemini LLM validation
+4. **Graph Storage**: Store documents, chunks, entities in Neo4j with relationships
+5. **Vector Indexing**: Generate dense embeddings (384-dim) using Sentence Transformers, store in Qdrant
+6. **BM25 Indexing**: Build inverted index for keyword search with optional persistence
 
 ### 2. Hybrid Retrieval
 
@@ -409,9 +437,11 @@ KnowledgeGraph/
    - Formula: `BM25(d,q) = Σ IDF(qi) × (f(qi,d)×(k1+1))/(f(qi,d)+k1×(1-b+b×|d|/avgdl))`
    - Fast, explainable, works well for exact matches
 
-2. **ColBERT Search**: Dense late-interaction retrieval
-   - Formula: `MaxSim(Q,D) = Σ_{q∈Q} max_{d∈D} (E_q · E_d^T)`
-   - Semantic understanding, multilingual support
+2. **Dense Search**: Neural semantic retrieval with Sentence Transformers
+   - Model: all-MiniLM-L6-v2 (384-dimensional embeddings)
+   - Scoring: Cosine similarity between normalized embeddings
+   - Storage: Qdrant vector database with chunk ID alignment
+   - Features: Semantic understanding, multilingual support, fast inference
 
 3. **Graph Search**: Entity-based traversal
    - Extract entities from query
@@ -436,10 +466,10 @@ Final results ranked by RRF score, showing:
 ### Latency Breakdown (typical query)
 
 - BM25 retrieval: ~50ms
-- ColBERT retrieval: ~200ms
+- Dense retrieval (Qdrant): ~80ms
 - Graph retrieval: ~100ms
 - RRF fusion: ~10ms
-- **Total: ~360ms**
+- **Total: ~240ms**
 
 ### Throughput
 
@@ -467,11 +497,11 @@ neo4j-admin server console
 telnet your-instance.databases.neo4j.io 7687
 ```
 
-### ColBERT Out of Memory
+### Dense Retriever Out of Memory
 
 ```python
-# Reduce max_document_length in colbert_retriever.py
-self.model.index(..., max_document_length=128)
+# Reduce batch size in dense_retriever.py
+dense_retriever.index_documents(documents, batch_size=16)
 ```
 
 ### Arabic Text Display Issues
@@ -485,7 +515,7 @@ with open('file.txt', 'r', encoding='utf-8') as f:
 ## 📚 References
 
 1. Robertson, S. E., et al. (1995). "Okapi at TREC-3". NIST Special Publication 500-225.
-2. Santhanam, K., et al. (2022). "ColBERTv2: Effective and Efficient Retrieval via Lightweight Late Interaction". NAACL 2022.
+2. Reimers, N., & Gurevych, I. (2019). "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks". EMNLP 2019.
 3. Cormack, G. V., et al. (2009). "Reciprocal Rank Fusion outperforms Condorcet". SIGIR 2009.
 
 ## 📝 License
@@ -501,7 +531,7 @@ Contributions welcome! Please open an issue or submit a pull request.
 Built with:
 - FastAPI, spaCy, NLTK
 - Neo4j, Qdrant, Redis
-- RAGatouille (ColBERT wrapper)
+- Sentence Transformers
 - Google Gemini
 
 ---

@@ -11,6 +11,7 @@ export default function DocumentUpload() {
   const [progress, setProgress] = useState({ stage: '', percent: 0 })
   const [startTime, setStartTime] = useState(null)
   const [elapsedTime, setElapsedTime] = useState(0)
+  const [isDragActive, setIsDragActive] = useState(false)
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0])
@@ -28,6 +29,35 @@ export default function DocumentUpload() {
     }
     return () => clearInterval(interval)
   }, [uploading, startTime])
+
+  const handleDragOver = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!uploading) {
+      setIsDragActive(true)
+    }
+  }
+
+  const handleDragLeave = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setIsDragActive(false)
+  }
+
+  const handleDrop = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setIsDragActive(false)
+
+    if (uploading) return
+
+    const droppedFiles = event.dataTransfer.files
+    if (droppedFiles && droppedFiles.length > 0) {
+      setFile(droppedFiles[0])
+      setResult(null)
+      setError(null)
+    }
+  }
 
   const handleUpload = async () => {
     if (!file) return
@@ -125,7 +155,16 @@ export default function DocumentUpload() {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Select File
             </label>
-            <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-gray-400 transition-colors">
+            <div
+              className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-lg transition-colors ${
+                isDragActive
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-300 hover:border-gray-400'
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
               <div className="space-y-1 text-center">
                 <FileText className="mx-auto h-12 w-12 text-gray-400" />
                 <div className="flex text-sm text-gray-600">
