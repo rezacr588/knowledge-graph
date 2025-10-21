@@ -445,34 +445,76 @@ class Neo4jClient:
                 entities.append(entity)
                 entity_ids.append(record['id'])
             
-            # Get relationships between these entities
-            relationships = []
+            # Get all relationships (edges) for visualization
+            edges = []
+            
             if entity_ids:
-                rels_query = """
+                # 1. Entity-to-Entity relationships (RELATES_TO)
+                entity_rels_query = """
                 MATCH (e1:Entity)-[r:RELATES_TO]->(e2:Entity)
                 WHERE e1.id IN $entity_ids AND e2.id IN $entity_ids
                 RETURN e1.id as source, e2.id as target, 
-                       r.type as type, r.confidence as confidence
+                       'RELATES_TO' as rel_type, r.confidence as confidence
+                LIMIT 100
+                """
+                
+                entity_rels_result = session.run(entity_rels_query, entity_ids=entity_ids)
+                for record in entity_rels_result:
+                    edges.append({
+                        'source': record['source'],
+                        'target': record['target'],
+                        'type': record['rel_type'],
+                        'confidence': record['confidence'],
+                        'label': 'relates to'
+                    })
+                
+                # 2. Chunk-to-Entity relationships (MENTIONS)
+                # These show which chunks mention which entities
+                chunk_mentions_query = """
+                MATCH (c:Chunk)-[m:MENTIONS]->(e:Entity)
+                WHERE e.id IN $entity_ids
+                WITH e.id as entity_id, count(c) as mention_count
+                WHERE mention_count > 0
+                RETURN entity_id, mention_count
                 LIMIT 200
                 """
                 
-                rels_result = session.run(rels_query, entity_ids=entity_ids)
-                for record in rels_result:
-                    relationships.append({
+                # For co-occurrence relationships: entities mentioned in the same chunk
+                cooccurrence_query = """
+                MATCH (c:Chunk)-[m1:MENTIONS]->(e1:Entity)
+                MATCH (c)-[m2:MENTIONS]->(e2:Entity)
+                WHERE e1.id IN $entity_ids AND e2.id IN $entity_ids 
+                  AND e1.id < e2.id
+                WITH e1, e2, count(c) as shared_chunks, 
+                     avg(m1.confidence) as conf1, avg(m2.confidence) as conf2
+                WHERE shared_chunks > 0
+                RETURN e1.id as source, e2.id as target, 
+                       shared_chunks, (conf1 + conf2) / 2 as confidence
+                ORDER BY shared_chunks DESC
+                LIMIT 150
+                """
+                
+                cooccurrence_result = session.run(cooccurrence_query, entity_ids=entity_ids)
+                for record in cooccurrence_result:
+                    edges.append({
                         'source': record['source'],
                         'target': record['target'],
-                        'type': record['type'],
-                        'confidence': record['confidence']
+                        'type': 'CO_OCCURS',
+                        'confidence': record['confidence'],
+                        'weight': record['shared_chunks'],
+                        'label': f"co-occurs ({record['shared_chunks']}x)"
                     })
             
-            # Get chunk connections
+            # Get chunk information for detail panel
             chunk_connections = []
             if entity_ids:
                 chunks_query = """
                 MATCH (c:Chunk)-[m:MENTIONS]->(e:Entity)
                 WHERE e.id IN $entity_ids
                 RETURN c.id as chunk_id, c.text as chunk_text,
-                       e.id as entity_id, m.confidence as confidence
+                       e.id as entity_id, e.name as entity_name, 
+                       m.confidence as confidence
+                ORDER BY m.confidence DESC
                 LIMIT 200
                 """
                 
@@ -480,14 +522,15 @@ class Neo4jClient:
                 for record in chunks_result:
                     chunk_connections.append({
                         'chunk_id': record['chunk_id'],
-                        'chunk_text': record['chunk_text'][:100] if record['chunk_text'] else '',
+                        'chunk_text': record['chunk_text'][:150] if record['chunk_text'] else '',
                         'entity_id': record['entity_id'],
+                        'entity_name': record['entity_name'],
                         'confidence': record['confidence']
                     })
             
             return {
                 'nodes': entities,
-                'edges': relationships,
+                'edges': edges,
                 'chunk_connections': chunk_connections,
                 'stats': self.get_graph_stats()
             }
