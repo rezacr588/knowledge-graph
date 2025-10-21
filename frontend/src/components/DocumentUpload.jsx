@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Upload, FileText, CheckCircle, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Upload, FileText, CheckCircle, Loader2, Clock } from 'lucide-react'
 import axios from 'axios'
 
 export default function DocumentUpload() {
@@ -8,6 +8,9 @@ export default function DocumentUpload() {
   const [uploading, setUploading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+  const [progress, setProgress] = useState({ stage: '', percent: 0 })
+  const [startTime, setStartTime] = useState(null)
+  const [elapsedTime, setElapsedTime] = useState(0)
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0])
@@ -15,29 +18,89 @@ export default function DocumentUpload() {
     setError(null)
   }
 
+  // Timer for elapsed time
+  useEffect(() => {
+    let interval
+    if (uploading && startTime) {
+      interval = setInterval(() => {
+        setElapsedTime(Date.now() - startTime)
+      }, 100)
+    }
+    return () => clearInterval(interval)
+  }, [uploading, startTime])
+
   const handleUpload = async () => {
     if (!file) return
 
     setUploading(true)
     setError(null)
     setResult(null)
+    setStartTime(Date.now())
+    setElapsedTime(0)
+    setProgress({ stage: 'Starting...', percent: 0 })
 
     const formData = new FormData()
     formData.append('file', file)
     formData.append('language', language)
 
     try {
-      const response = await axios.post('/api/ingest', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+      // Use fetch with streaming response
+      const response = await fetch('/api/ingest/stream', {
+        method: 'POST',
+        body: formData,
       })
-      setResult(response.data)
-      setFile(null)
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.statusText}`)
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        // Decode chunk and add to buffer
+        buffer += decoder.decode(value, { stream: true })
+        
+        // Split by newlines to get complete SSE messages
+        const lines = buffer.split('\n')
+        
+        // Keep the last incomplete line in the buffer
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.substring(6))
+              
+              if (data.error) {
+                throw new Error(data.error)
+              } else if (data.result) {
+                // Final result received
+                setResult(data.result)
+                setFile(null)
+              } else if (data.message && data.percent !== undefined) {
+                // Progress update
+                setProgress({
+                  stage: data.message,
+                  percent: data.percent
+                })
+              }
+            } catch (parseErr) {
+              console.warn('Failed to parse SSE data:', line, parseErr)
+            }
+          }
+        }
+      }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Upload failed')
+      console.error('Upload error:', err)
+      setError(err.message || 'Upload failed')
     } finally {
       setUploading(false)
+      setStartTime(null)
     }
   }
 
@@ -125,6 +188,37 @@ export default function DocumentUpload() {
             )}
           </button>
         </div>
+
+        {/* Progress Bar */}
+        {uploading && (
+          <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <Loader2 className="animate-spin h-4 w-4 text-blue-600 mr-2" />
+                  <span className="text-sm font-medium text-blue-900">{progress.stage}</span>
+                </div>
+                <div className="flex items-center text-xs text-blue-600">
+                  <Clock className="h-3 w-3 mr-1" />
+                  {(elapsedTime / 1000).toFixed(1)}s
+                </div>
+              </div>
+              
+              {/* Progress bar */}
+              <div className="w-full bg-blue-100 rounded-full h-2.5">
+                <div
+                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${progress.percent}%` }}
+                ></div>
+              </div>
+              
+              <div className="flex justify-between text-xs text-blue-700">
+                <span>{progress.percent}% complete</span>
+                <span>Please wait...</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Success Message */}
         {result && (

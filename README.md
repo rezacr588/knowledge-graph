@@ -50,6 +50,25 @@ Production-grade Hybrid Retrieval-Augmented Generation system combining **BM25 s
 
 ## 🚀 Quick Start
 
+### Development Setup (Recommended)
+
+For local development with backend in venv, frontend with Vite, and Redis in Docker:
+
+```bash
+# Setup and start all services
+./setup_venv.sh
+./start_dev.sh
+
+# Access the application
+# Frontend: http://localhost:5173
+# Backend: http://localhost:8000
+# API Docs: http://localhost:8000/docs
+```
+
+See **[DEV_SETUP_GUIDE.md](DEV_SETUP_GUIDE.md)** for detailed development instructions.
+
+### Production Setup (Docker Compose)
+
 ### Prerequisites
 
 - Python 3.11+
@@ -182,6 +201,23 @@ curl -X POST "http://localhost:8000/query" \
   "total_time_ms": 258.1,
   "methods_used": ["bm25", "colbert", "graph"]
 }
+
+### 3b. Run Backend Locally, Frontend/Redis in Docker
+
+If you want the FastAPI backend to run inside your Python virtual environment (for MPS acceleration, live debugging, etc.) while keeping Redis and the React app in Docker containers, use `run_mixed.sh`:
+
+```bash
+source .venv/bin/activate              # ensure your backend venv is active
+export VITE_API_URL=http://host.docker.internal:8000  # optional override
+./run_mixed.sh
+```
+
+The script will:
+
+- Start `redis` and `frontend` services via `docker compose up redis frontend -d`.
+- Launch the backend using `uvicorn` from the active virtualenv on port 8000.
+
+Press `Ctrl+C` to stop; the script shuts down the backend process and stops the Docker services. Ensure Neo4j credentials are present in `.env` so the backend reports healthy.
 ```
 
 ## 📊 Evaluation Results
