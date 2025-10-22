@@ -25,6 +25,7 @@ function GraphVisualization() {
   const [error, setError] = useState(null)
   const [selectedNode, setSelectedNode] = useState(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [showLegend, setShowLegend] = useState(true)
   const containerRef = useRef(null)
   const nvlRef = useRef(null)
 
@@ -320,9 +321,9 @@ function GraphVisualization() {
           </div>
         )}
 
-        <div className={`grid gap-6 ${isFullscreen ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-4'}`}>
+        <div className="w-full">
           {/* Graph Canvas */}
-          <div className={isFullscreen ? '' : 'lg:col-span-3'}>
+          <div className="w-full">
             <div 
               className={`relative border-2 border-gray-200 rounded-xl shadow-inner bg-gray-50`}
               style={{ 
@@ -357,10 +358,69 @@ function GraphVisualization() {
                 />
               )}
               
+              {/* Legend Panel - Floating on Graph */}
+              {showLegend && (
+                <div className="absolute top-4 right-4 z-20 w-64">
+                  <div className="bg-white rounded-lg shadow-xl border border-gray-200 backdrop-blur-sm bg-opacity-95">
+                    <div className="flex items-center justify-between p-3 border-b border-gray-200">
+                      <div className="flex items-center space-x-2">
+                        <Users className="h-4 w-4 text-gray-700" />
+                        <h3 className="text-sm font-bold text-gray-900">Entity Types</h3>
+                      </div>
+                      <button
+                        onClick={() => setShowLegend(false)}
+                        className="text-gray-400 hover:text-gray-600 transition"
+                        title="Hide legend"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="p-3 space-y-2 max-h-96 overflow-y-auto">
+                      {Object.entries(ENTITY_COLORS)
+                        .filter(([key]) => !['DEFAULT', 'ORG', 'TECHNOLOGY'].includes(key))
+                        .map(([type, color]) => (
+                          <div key={type} className="flex items-center space-x-2">
+                            <div
+                              className="w-3 h-3 rounded-full flex-shrink-0 shadow-sm border border-white"
+                              style={{ backgroundColor: color }}
+                            />
+                            <span className="text-xs font-medium text-gray-700">{type}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Toggle Legend Button (when hidden) */}
+              {!showLegend && (
+                <button
+                  onClick={() => setShowLegend(true)}
+                  className="absolute top-4 right-4 z-20 p-2 bg-white rounded-lg shadow-lg hover:bg-gray-50 transition border border-gray-200"
+                  title="Show legend"
+                >
+                  <Users className="h-5 w-5 text-gray-700" />
+                </button>
+              )}
+
+              {/* Empty State Message */}
+              {!selectedNode && nodes.length > 0 && (
+                <div className="absolute top-4 left-4 z-20">
+                  <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-3 backdrop-blur-sm bg-opacity-90">
+                    <div className="flex items-center space-x-2 text-sm text-gray-600">
+                      <Info className="h-4 w-4 text-blue-500" />
+                      <span>Click on a node to see details</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Selected Entity Info Box - Floating on Graph */}
               {selectedNode && (
-                <div className="absolute top-4 left-4 z-20 max-w-sm">
-                  <div className="bg-white rounded-lg shadow-2xl border-2 border-red-500 p-4 backdrop-blur-sm bg-opacity-95">
+                <div className="absolute top-4 left-4 z-20 w-80">
+                  <div className="bg-white rounded-lg shadow-2xl border-2 border-red-500 backdrop-blur-sm bg-opacity-95 p-4">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center space-x-2">
                         <div 
@@ -466,85 +526,9 @@ function GraphVisualization() {
               </div>
             </div>
             <p className="text-xs text-gray-500 mt-2 text-center">
-              🖱️ Drag nodes • Scroll to zoom • Click to select • Use zoom controls →
+              🖱️ Drag nodes • Scroll to zoom • Click to select • Toggle panels with icons
             </p>
           </div>
-
-          {/* Side Panel */}
-          {!isFullscreen && <div className="space-y-4">
-            {/* Legend */}
-            <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 border border-gray-200">
-              <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center">
-                <Users className="h-4 w-4 mr-2" />
-                Entity Types
-              </h3>
-              <div className="space-y-2">
-                {Object.entries(ENTITY_COLORS)
-                  .filter(([key]) => !['DEFAULT', 'ORG', 'TECHNOLOGY'].includes(key))
-                  .map(([type, color]) => (
-                    <div key={type} className="flex items-center space-x-2">
-                      <div
-                        className="w-4 h-4 rounded-full flex-shrink-0 shadow-sm border-2 border-white"
-                        style={{ backgroundColor: color }}
-                      />
-                      <span className="text-xs font-medium text-gray-700">{type}</span>
-                    </div>
-                  ))}
-              </div>
-            </div>
-
-            {/* Selected Node Info */}
-            {selectedNode ? (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center">
-                  <Users className="h-4 w-4 mr-2" />
-                  Selected Entity
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div>
-                    <span className="font-medium">Name:</span> {selectedNode.caption || selectedNode.id}
-                  </div>
-                  <div>
-                    <span className="font-medium">Type:</span> {selectedNode.labels?.[0] || selectedNode.properties?.type || 'N/A'}
-                  </div>
-                  {selectedNode.properties?.language && (
-                    <div>
-                      <span className="font-medium">Language:</span> {selectedNode.properties.language.toUpperCase()}
-                    </div>
-                  )}
-                  {selectedNode.properties?.confidence && (
-                    <div>
-                      <span className="font-medium">Confidence:</span> {(selectedNode.properties.confidence * 100).toFixed(1)}%
-                    </div>
-                  )}
-                </div>
-                <div className="mt-3 space-y-2">
-                  <button
-                    onClick={() => {
-                      if (nvlRef.current && selectedNode) {
-                        nvlRef.current.zoomToNodes?.([selectedNode.id], { duration: 500, zoomLevel: 1.5 })
-                      }
-                    }}
-                    className="w-full px-3 py-2 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center space-x-1"
-                  >
-                    <Maximize2 className="h-3 w-3" />
-                    <span>Center in Graph</span>
-                  </button>
-                  <button
-                    onClick={() => setSelectedNode(null)}
-                    className="w-full px-3 py-1 text-xs bg-white border border-blue-300 text-blue-700 rounded hover:bg-blue-50"
-                  >
-                    Clear Selection
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-gray-50 rounded-lg p-4 text-center text-sm text-gray-600">
-                <Info className="h-5 w-5 mx-auto mb-2 text-gray-400" />
-                Click on a node to see details
-              </div>
-            )}
-          </div>}
         </div>
       </div>
     </div>
