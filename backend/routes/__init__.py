@@ -8,6 +8,7 @@ from .query import router as query_router
 from .chat import router as chat_router
 from .graph import router as graph_router
 from .chunks import router as chunks_router
+from .admin import router as admin_router
 
 __all__ = [
     'health_router',
@@ -15,5 +16,6 @@ __all__ = [
     'query_router',
     'chat_router',
     'graph_router',
-    'chunks_router'
+    'chunks_router',
+    'admin_router'
 ]

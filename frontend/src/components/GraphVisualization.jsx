@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Network, RefreshCw, Loader2, Info, Users, FileText, Link as LinkIcon, Maximize, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
-import { InteractiveNvlWrapper } from '@neo4j-nvl/react'
+import { Network, RefreshCw, Loader2, Info, Users, FileText, Link as LinkIcon, Maximize, ZoomIn, ZoomOut, Maximize2, Trash2, Settings, X } from 'lucide-react'
+import * as d3 from 'd3'
 import axios from 'axios'
 
 // Enhanced color mapping for entity types
@@ -26,8 +26,12 @@ function GraphVisualization() {
   const [selectedNode, setSelectedNode] = useState(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showLegend, setShowLegend] = useState(true)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const containerRef = useRef(null)
-  const nvlRef = useRef(null)
+  const svgRef = useRef(null)
+  const simulationRef = useRef(null)
 
   useEffect(() => {
     loadGraphData()
@@ -73,22 +77,54 @@ function GraphVisualization() {
   }
 
   const handleZoomIn = () => {
-    if (nvlRef.current) {
-      const currentZoom = nvlRef.current.getZoom?.() || 1
-      nvlRef.current.setZoom?.(currentZoom * 1.2)
+    if (svgRef.current) {
+      const svg = d3.select(svgRef.current)
+      svg.transition().call(
+        d3.zoom().scaleBy.bind(null, svg),
+        1.2
+      )
     }
   }
 
   const handleZoomOut = () => {
-    if (nvlRef.current) {
-      const currentZoom = nvlRef.current.getZoom?.() || 1
-      nvlRef.current.setZoom?.(currentZoom / 1.2)
+    if (svgRef.current) {
+      const svg = d3.select(svgRef.current)
+      svg.transition().call(
+        d3.zoom().scaleBy.bind(null, svg),
+        0.8
+      )
     }
   }
 
   const handleResetView = () => {
-    if (nvlRef.current) {
-      nvlRef.current.fit?.()
+    if (svgRef.current) {
+      const svg = d3.select(svgRef.current)
+      svg.transition().call(
+        d3.zoom().transform.bind(null, svg),
+        d3.zoomIdentity
+      )
+      if (simulationRef.current) {
+        simulationRef.current.alpha(1).restart()
+      }
+    }
+  }
+
+  const handleResetDatabase = async () => {
+    setIsResetting(true)
+    setError(null)
+    try {
+      await axios.post('/api/admin/reset-all')
+      // Reload data after successful reset
+      setShowResetConfirm(false)
+      setSelectedNode(null)
+      await loadGraphData()
+      alert('✅ Database reset successfully! All data has been cleared.')
+    } catch (err) {
+      console.error('Failed to reset database:', err)
+      setError(err.response?.data?.detail || 'Failed to reset database')
+      alert('❌ Failed to reset database. Check console for details.')
+    } finally {
+      setIsResetting(false)
     }
   }
 
@@ -125,8 +161,8 @@ function GraphVisualization() {
       )
       return {
         id: edge.id || `edge_${idx}`,
-        from: edge.source,
-        to: edge.target,
+        source: edge.source,  // D3 requires 'source'
+        target: edge.target,  // D3 requires 'target'
         caption: edge.label || edge.type,
         type: edge.type,
         properties: {
@@ -145,37 +181,6 @@ function GraphVisualization() {
     return { nodes, relationships }
   }
 
-  // Mouse event callbacks for NVL
-  const mouseEventCallbacks = {
-    onNodeClick: (node, hitTargets, evt) => {
-      console.log('Node clicked:', node)
-      setSelectedNode(node)
-      // Zoom to the selected node
-      if (nvlRef.current && node) {
-        nvlRef.current.zoomToNodes?.([node.id], { duration: 500 })
-      }
-    },
-    onNodeDoubleClick: (node, hitTargets, evt) => {
-      console.log('Node double clicked:', node)
-      // Double-click to focus and highlight
-      if (nvlRef.current && node) {
-        nvlRef.current.zoomToNodes?.([node.id], { duration: 300, zoomLevel: 2 })
-      }
-    },
-    onCanvasClick: (evt) => {
-      setSelectedNode(null)
-    },
-    onZoom: (zoomLevel) => {
-      console.log('Zoom level:', zoomLevel)
-    },
-    onPan: (evt) => {
-      console.log('Panning')
-    },
-    onDrag: (nodes) => {
-      console.log('Dragging nodes:', nodes.length)
-    }
-  }
-
   const { nodes, relationships } = transformToNVLFormat()
   
   // Debug logging
@@ -190,13 +195,179 @@ function GraphVisualization() {
     }
   }, [graphData, nodes, relationships])
 
-  // Update graph when selection changes
+  // Render D3 graph - Updated with validation
   useEffect(() => {
-    if (nvlRef.current && selectedNode) {
-      // Force graph to re-render with new styles
-      nvlRef.current.render?.()
+    if (!svgRef.current || !graphData || nodes.length === 0) return
+    
+    console.log('=== Rendering D3 Graph (v2) ===')
+
+    const svg = d3.select(svgRef.current)
+    const width = svgRef.current.clientWidth
+    const height = svgRef.current.clientHeight
+
+    // Create node ID set for validation
+    const nodeIds = new Set(nodes.map(n => n.id))
+    
+    // Filter relationships to only include valid ones
+    const validRelationships = relationships.filter(rel => {
+      const hasValidSource = nodeIds.has(rel.source)
+      const hasValidTarget = nodeIds.has(rel.target)
+      if (!hasValidSource || !hasValidTarget) {
+        console.warn('Invalid relationship:', rel, 'source:', hasValidSource, 'target:', hasValidTarget)
+        return false
+      }
+      return true
+    })
+
+    console.log('Nodes:', nodes.length)
+    console.log('All relationships:', relationships.length)
+    console.log('Valid relationships:', validRelationships.length)
+    console.log('Sample node IDs:', nodes.slice(0, 3).map(n => n.id))
+    console.log('Sample relationships:', validRelationships.slice(0, 3))
+
+    if (validRelationships.length === 0 && relationships.length > 0) {
+      console.error('No valid relationships! Check if node IDs match relationship from/to IDs')
     }
-  }, [selectedNode])
+
+    // Clear previous graph
+    svg.selectAll('*').remove()
+
+    // Create zoom behavior
+    const zoom = d3.zoom()
+      .scaleExtent([0.1, 4])
+      .on('zoom', (event) => {
+        g.attr('transform', event.transform)
+      })
+
+    svg.call(zoom)
+
+    const g = svg.append('g')
+
+    // Create simulation with error handling
+    let simulation
+    try {
+      simulation = d3.forceSimulation(nodes)
+        .force('link', d3.forceLink(validRelationships)
+          .id(d => d.id)
+          .distance(100)
+          .strength(0.5))
+        .force('charge', d3.forceManyBody().strength(-300))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collision', d3.forceCollide().radius(d => (d.size || 20) / 2 + 10))
+      
+      simulationRef.current = simulation
+      console.log('✅ Simulation created successfully')
+    } catch (error) {
+      console.error('❌ Error creating simulation:', error)
+      console.error('Nodes:', nodes)
+      console.error('Valid relationships:', validRelationships)
+      return // Exit if simulation fails
+    }
+
+    // Draw links
+    const link = g.append('g')
+      .selectAll('line')
+      .data(validRelationships)
+      .join('line')
+      .attr('stroke', d => {
+        const isConnected = selectedNode && (d.source.id === selectedNode.id || d.target.id === selectedNode.id)
+        return isConnected ? '#EF4444' : '#CBD5E1'
+      })
+      .attr('stroke-width', d => {
+        const isConnected = selectedNode && (d.source.id === selectedNode.id || d.target.id === selectedNode.id)
+        return isConnected ? 3 : 2
+      })
+      .attr('stroke-opacity', 0.6)
+
+    // Draw link labels
+    const linkLabel = g.append('g')
+      .selectAll('text')
+      .data(validRelationships)
+      .join('text')
+      .attr('text-anchor', 'middle')
+      .attr('font-size', '10px')
+      .attr('fill', '#64748B')
+      .text(d => d.caption || d.type)
+
+    // Draw nodes
+    const node = g.append('g')
+      .selectAll('circle')
+      .data(nodes)
+      .join('circle')
+      .attr('r', d => (d.id === selectedNode?.id ? 25 : d.size / 2))
+      .attr('fill', d => (d.id === selectedNode?.id ? '#EF4444' : d.color))
+      .attr('stroke', d => (d.id === selectedNode?.id ? '#1F2937' : '#FFF'))
+      .attr('stroke-width', d => (d.id === selectedNode?.id ? 3 : 2))
+      .style('cursor', 'pointer')
+      .call(d3.drag()
+        .on('start', dragstarted)
+        .on('drag', dragged)
+        .on('end', dragended))
+      .on('click', (event, d) => {
+        event.stopPropagation()
+        setSelectedNode(d)
+      })
+
+    // Draw node labels
+    const nodeLabel = g.append('g')
+      .selectAll('text')
+      .data(nodes)
+      .join('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '0.3em')
+      .attr('font-size', d => (d.id === selectedNode?.id ? '12px' : '11px'))
+      .attr('font-weight', d => (d.id === selectedNode?.id ? 'bold' : 'normal'))
+      .attr('fill', '#1F2937')
+      .attr('pointer-events', 'none')
+      .text(d => d.caption)
+
+    // Canvas click to deselect
+    svg.on('click', () => setSelectedNode(null))
+
+    // Update positions on simulation tick
+    simulation.on('tick', () => {
+      link
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y)
+
+      linkLabel
+        .attr('x', d => (d.source.x + d.target.x) / 2)
+        .attr('y', d => (d.source.y + d.target.y) / 2)
+
+      node
+        .attr('cx', d => d.x)
+        .attr('cy', d => d.y)
+
+      nodeLabel
+        .attr('x', d => d.x)
+        .attr('y', d => d.y)
+    })
+
+    // Drag functions
+    function dragstarted(event) {
+      if (!event.active) simulation.alphaTarget(0.3).restart()
+      event.subject.fx = event.subject.x
+      event.subject.fy = event.subject.y
+    }
+
+    function dragged(event) {
+      event.subject.fx = event.x
+      event.subject.fy = event.y
+    }
+
+    function dragended(event) {
+      if (!event.active) simulation.alphaTarget(0)
+      event.subject.fx = null
+      event.subject.fy = null
+    }
+
+    // Cleanup
+    return () => {
+      simulation.stop()
+    }
+  }, [graphData, nodes, relationships, selectedNode])
 
   if (loading) {
     return (
@@ -281,6 +452,14 @@ function GraphVisualization() {
           </div>
           <div className="flex items-center space-x-2">
             <button
+              onClick={() => setShowSettings(true)}
+              className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center space-x-2 transition"
+              title="Settings"
+            >
+              <Settings className="h-4 w-4" />
+              <span>Settings</span>
+            </button>
+            <button
               onClick={toggleFullscreen}
               className={`px-3 py-2 text-sm rounded-lg flex items-center space-x-2 transition ${
                 isFullscreen
@@ -341,19 +520,12 @@ function GraphVisualization() {
                   </div>
                 </div>
               ) : (
-                <InteractiveNvlWrapper
-                  ref={nvlRef}
-                  nodes={nodes}
-                  rels={relationships}
-                  mouseEventCallbacks={mouseEventCallbacks}
-                  nvlOptions={{
-                    layout: 'force',
-                    initialZoom: 0.8,
-                    disableWebGL: false,
-                    instanceId: 'knowledge-graph',
-                    allowDynamicMinZoom: true,
-                    maxZoom: 4,
-                    minZoom: 0.1
+                <svg
+                  ref={svgRef}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    background: '#f9fafb'
                   }}
                 />
               )}
@@ -531,6 +703,180 @@ function GraphVisualization() {
           </div>
         </div>
       </div>
+
+      {/* Settings Panel */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <Settings className="h-6 w-6 text-gray-700" />
+                <h2 className="text-xl font-bold text-gray-900">Settings</h2>
+              </div>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition"
+                title="Close settings"
+              >
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-6">
+              {/* Database Management Section */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+                  <Network className="h-5 w-5 mr-2 text-blue-600" />
+                  Database Management
+                </h3>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="flex items-start space-x-3">
+                    <Trash2 className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-900 mb-1">Reset All Data</h4>
+                      <p className="text-sm text-gray-600 mb-3">
+                        Permanently delete all data from Neo4j, Qdrant, BM25 index, chunk store, and in-memory caches. This includes all vectors, entities, relationships, documents, and chunks. This action cannot be undone.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setShowSettings(false)
+                          setShowResetConfirm(true)
+                        }}
+                        className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center space-x-2 transition"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span>Reset Database</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Graph Display Section */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+                  <Network className="h-5 w-5 mr-2 text-blue-600" />
+                  Graph Display
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">Show Legend</p>
+                      <p className="text-sm text-gray-600">Display entity type legend on graph</p>
+                    </div>
+                    <button
+                      onClick={() => setShowLegend(!showLegend)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                        showLegend ? 'bg-blue-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                          showLegend ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Statistics Section */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+                  <Info className="h-5 w-5 mr-2 text-blue-600" />
+                  Current Statistics
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p className="text-sm text-gray-600 mb-1">Entities</p>
+                    <p className="text-2xl font-bold text-gray-900">{graphData?.stats?.entities || 0}</p>
+                  </div>
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                    <p className="text-sm text-gray-600 mb-1">Relationships</p>
+                    <p className="text-2xl font-bold text-gray-900">{graphData?.stats?.relationships || 0}</p>
+                  </div>
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <p className="text-sm text-gray-600 mb-1">Documents</p>
+                    <p className="text-2xl font-bold text-gray-900">{graphData?.stats?.documents || 0}</p>
+                  </div>
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                    <p className="text-sm text-gray-600 mb-1">Chunks</p>
+                    <p className="text-2xl font-bold text-gray-900">{graphData?.stats?.chunks || 0}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 p-4">
+              <button
+                onClick={() => setShowSettings(false)}
+                className="w-full px-4 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition"
+              >
+                Close Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Confirmation Modal */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-2xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-start space-x-3 mb-4">
+              <div className="flex-shrink-0">
+                <Trash2 className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 mb-2">Reset All Data?</h3>
+                <p className="text-sm text-gray-600 mb-2">
+                  This will permanently delete:
+                </p>
+                <ul className="text-sm text-gray-700 space-y-1 ml-4">
+                  <li>• All <strong>vectors and chunks</strong> from Qdrant</li>
+                  <li>• All <strong>entities and relationships</strong> from Neo4j</li>
+                  <li>• All <strong>BM25 index</strong> data (in-memory)</li>
+                  <li>• All <strong>persisted chunks</strong> from disk</li>
+                  <li>• All <strong>in-memory documents</strong></li>
+                </ul>
+                <p className="text-sm text-red-600 font-semibold mt-3">
+                  ⚠️ This action cannot be undone!
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                disabled={isResetting}
+                className="flex-1 px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetDatabase}
+                disabled={isResetting}
+                className="flex-1 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50 flex items-center justify-center space-x-2"
+              >
+                {isResetting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Resetting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    <span>Reset Everything</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

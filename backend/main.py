@@ -25,7 +25,8 @@ from backend.routes import (
     query_router,
     chat_router,
     graph_router,
-    chunks_router
+    chunks_router,
+    admin_router
 )
 
 # Load environment variables
@@ -158,6 +159,9 @@ async def startup_event():
         if DENSE_AVAILABLE and DenseRetriever:
             try:
                 app_state['dense_retriever'] = DenseRetriever()
+                qdrant_store = getattr(app_state['dense_retriever'], 'qdrant_store', None)
+                if qdrant_store:
+                    app_state['qdrant_store'] = qdrant_store
                 logger.info("✅ Dense retriever initialized")
             except Exception as e:
                 logger.warning(f"⚠️  Dense retriever initialization failed: {e}")
@@ -230,5 +234,6 @@ app.include_router(query_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(graph_router, prefix="/api")
 app.include_router(chunks_router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
 
 logger.info("✅ All routes registered")
